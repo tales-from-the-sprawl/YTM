@@ -6,7 +6,7 @@ import Config
 # The watchers configuration can be used to run external
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
-config :kiosk_demo, KioskDemoWeb.Endpoint,
+config :ytm, YtmWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
   server: true,
@@ -16,8 +16,8 @@ config :kiosk_demo, KioskDemoWeb.Endpoint,
   debug_errors: true,
   secret_key_base: "hb/peKNv21ttmBwvr+/YTwyJ4FJUJzsyteDrKT16A/4WFRm16GuOBd3rYa2KpGNk",
   watchers: [
-    esbuild: {Esbuild, :install_and_run, [:kiosk_demo, ~w(--sourcemap=inline --watch)]},
-    tailwind: {Tailwind, :install_and_run, [:kiosk_demo, ~w(--watch)]}
+    esbuild: {Esbuild, :install_and_run, [:ytm, ~w(--sourcemap=inline --watch)]},
+    tailwind: {Tailwind, :install_and_run, [:ytm, ~w(--watch)]}
   ]
 
 # ## SSL Support
@@ -44,17 +44,22 @@ config :kiosk_demo, KioskDemoWeb.Endpoint,
 # different ports.
 
 # Watch static and templates for browser reloading.
-config :kiosk_demo, KioskDemoWeb.Endpoint,
+config :ytm, YtmWeb.Endpoint,
   live_reload: [
+    web_console_logger: true,
     patterns: [
-      ~r"priv/static/(?!uploads/).*(js|css|png|jpeg|jpg|gif|svg)$"E,
-      ~r"priv/gettext/.*(po)$"E,
-      ~r"lib/kiosk_demo_web/(controllers|live|components)/.*(ex|heex)$"E
+      # Static assets, except user uploads
+        ~r"priv/static/(?!uploads/).*\.(js|css|png|jpeg|jpg|gif|svg)$"E,
+        # Gettext translations
+        ~r"priv/gettext/.*\.po$"E,
+        # Router, Controllers, LiveViews and LiveComponents
+        ~r"lib/ytm_web/router\.ex$"E,
+        ~r"lib/ytm_web/(controllers|live|components)/.*\.(ex|heex)$"E
     ]
   ]
 
 # Enable dev routes for dashboard and mailbox
-config :kiosk_demo, dev_routes: true
+config :ytm, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :console, format: "[$level] $message\n"
@@ -67,7 +72,9 @@ config :phoenix, :stacktrace_depth, 20
 config :phoenix, :plug_init_mode, :runtime
 
 config :phoenix_live_view,
-  # Include HEEx debug annotations as HTML comments in rendered markup
+  # Include debug annotations and locations in rendered markup.
+  # Changing this configuration will require mix clean and a full recompile.
   debug_heex_annotations: true,
+  debug_attributes: true,
   # Enable helpful, but potentially expensive runtime checks
   enable_expensive_runtime_checks: true

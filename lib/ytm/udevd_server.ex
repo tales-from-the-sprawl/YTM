@@ -1,4 +1,4 @@
-defmodule KioskDemo.UdevdServer do
+defmodule Ytm.UdevdServer do
   @moduledoc false
   use GenServer
 

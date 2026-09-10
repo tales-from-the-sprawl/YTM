@@ -8,7 +8,7 @@
       name: "default",
       files: %{
         included: ["lib/"],
-        excluded: ["lib/kiosk_demo_web.ex", "lib/kiosk_demo_web/"]
+        excluded: ["lib/ytm_web.ex", "lib/ytm_web/"]
       },
       strict: true,
       checks: [

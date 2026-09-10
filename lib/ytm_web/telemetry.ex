@@ -1,4 +1,4 @@
-defmodule KioskDemoWeb.Telemetry do
+defmodule YtmWeb.Telemetry do
   use Supervisor
   import Telemetry.Metrics
 
@@ -87,7 +87,7 @@ defmodule KioskDemoWeb.Telemetry do
     [
       # A module, function and arguments to be invoked periodically.
       # This function must call :telemetry.execute/3 and a metric must be added above.
-      # {KioskDemoWeb, :count_users, []}
+      # {YtmWeb, :count_users, []}
     ]
   end
 end

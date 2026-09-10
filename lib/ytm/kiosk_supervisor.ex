@@ -1,4 +1,4 @@
-defmodule KioskDemo.KioskSupervisor do
+defmodule Ytm.KioskSupervisor do
   @moduledoc false
   use Supervisor
 

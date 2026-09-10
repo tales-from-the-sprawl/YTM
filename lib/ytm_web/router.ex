@@ -1,11 +1,11 @@
-defmodule KioskDemoWeb.Router do
-  use KioskDemoWeb, :router
+defmodule YtmWeb.Router do
+  use YtmWeb, :router
 
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
     plug :fetch_live_flash
-    plug :put_root_layout, html: {KioskDemoWeb.Layouts, :root}
+    plug :put_root_layout, html: {YtmWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
   end
@@ -14,7 +14,7 @@ defmodule KioskDemoWeb.Router do
     plug :accepts, ["json"]
   end
 
-  scope "/", KioskDemoWeb do
+  scope "/", YtmWeb do
     pipe_through :browser
 
     live "/", HomeLive
@@ -24,7 +24,7 @@ defmodule KioskDemoWeb.Router do
   end
 
   # Other scopes may use custom stacks.
-  # scope "/api", KioskDemoWeb do
+  # scope "/api", YtmWeb do
   #   pipe_through :api
   # end
 
@@ -35,6 +35,6 @@ defmodule KioskDemoWeb.Router do
   scope "/dev" do
     pipe_through :browser
 
-    live_dashboard "/dashboard", metrics: KioskDemoWeb.Telemetry
+    live_dashboard "/dashboard", metrics: YtmWeb.Telemetry
   end
 end

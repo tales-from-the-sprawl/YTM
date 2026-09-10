@@ -1,6 +1,6 @@
-defmodule KioskDemoWeb.LoadingController do
+defmodule YtmWeb.LoadingController do
   @moduledoc false
-  use KioskDemoWeb, :controller
+  use YtmWeb, :controller
 
   @safe_schemes ~w(http https)
 

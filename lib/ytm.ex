@@ -1,9 +1,9 @@
-defmodule KioskDemo do
+defmodule Ytm do
   @moduledoc """
   Kiosk demo top-level helpers.
   """
 
-  alias KioskDemo.Cog
+  alias Ytm.Cog
 
   @doc """
   Go to the main page
@@ -59,7 +59,7 @@ defmodule KioskDemo do
   @spec change_url(String.t()) :: :ok | {:error, term()}
   def change_url(url) when is_binary(url) do
     loading_url =
-      KioskDemoWeb.Endpoint.url() <> "/loading?" <> URI.encode_query(next: url)
+      YtmWeb.Endpoint.url() <> "/loading?" <> URI.encode_query(next: url)
 
     Cog.open_url(loading_url)
   end
@@ -67,7 +67,7 @@ defmodule KioskDemo do
   @doc false
   @spec ssh_check_pass(charlist(), charlist()) :: boolean()
   def ssh_check_pass(_provided_username, provided_password) do
-    correct_password = Application.get_env(:kiosk_demo, :password, "kiosk")
+    correct_password = Application.get_env(:ytm, :password, "kiosk")
 
     provided_password == to_charlist(correct_password)
   end

@@ -1,11 +1,11 @@
-defmodule KioskDemo.MixProject do
+defmodule Ytm.MixProject do
   use Mix.Project
 
-  @app :kiosk_demo
-  @version "0.5.0"
-  @source_url "https://github.com/nerves-web-kiosk/kiosk_demo"
+  @app :ytm
+  @version "1.0.0"
+  @source_url "https://github.com/tales-from-the-sprawl/ytm"
 
-  @all_targets [:rpi4, :rpi5, :qemu_aarch64]
+  @all_targets [:rpi4]
 
   def project do
     [
@@ -29,8 +29,8 @@ defmodule KioskDemo.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger, :runtime_tools, :os_mon, :ssh],
-      mod: {KioskDemo.Application, []}
+      extra_applications: [:logger, :runtime_tools],
+      mod: {YTM.Application, []}
     ]
   end
 
@@ -79,10 +79,6 @@ defmodule KioskDemo.MixProject do
       # version updates, please review their release notes in case
       # changes to your application are needed.
       {:kiosk_system_rpi4, "~> 2.1.2", runtime: false, targets: :rpi4},
-      {:kiosk_system_rpi5, "~> 2.1.2", runtime: false, targets: :rpi5},
-
-      # Only working on Linux hosts due to OpenGL ES use
-      {:kiosk_system_qemu_aarch64, ">= 0.1.0", runtime: false, targets: :qemu_aarch64}
     ] ++ phoenix_deps()
   end
 
@@ -144,10 +140,10 @@ defmodule KioskDemo.MixProject do
     [
       setup: ["deps.get", "assets.setup", "assets.build"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind kiosk_demo", "esbuild kiosk_demo"],
+      "assets.build": ["compile", "tailwind ytm", "esbuild ytm"],
       "assets.deploy": [
-        "tailwind kiosk_demo --minify",
-        "esbuild kiosk_demo --minify",
+        "tailwind ytm --minify",
+        "esbuild ytm --minify",
         "phx.digest"
       ]
     ]

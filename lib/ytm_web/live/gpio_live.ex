@@ -1,9 +1,9 @@
-defmodule KioskDemoWeb.GPIOLive do
+defmodule YtmWeb.GPIOLive do
   @moduledoc """
   View and control GPIOs
   """
 
-  use KioskDemoWeb, :live_view
+  use YtmWeb, :live_view
 
   alias Circuits.GPIO
 

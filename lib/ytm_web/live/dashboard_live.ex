@@ -1,5 +1,5 @@
-defmodule KioskDemoWeb.DashboardLive do
-  use KioskDemoWeb, :live_view
+defmodule YtmWeb.DashboardLive do
+  use YtmWeb, :live_view
 
   def mount(_params, _session, socket) do
     {:ok, socket}

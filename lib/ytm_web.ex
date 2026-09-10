@@ -1,12 +1,12 @@
-defmodule KioskDemoWeb do
+defmodule YtmWeb do
   @moduledoc """
   The entrypoint for defining your web interface, such
   as controllers, components, channels, and so on.
 
   This can be used in your application as:
 
-      use KioskDemoWeb, :controller
-      use KioskDemoWeb, :html
+      use YtmWeb, :controller
+      use YtmWeb, :html
 
   The definitions below will be executed for every controller,
   component, etc, so keep them short and clean, focused
@@ -40,7 +40,7 @@ defmodule KioskDemoWeb do
     quote do
       use Phoenix.Controller, formats: [:html, :json]
 
-      use Gettext, backend: KioskDemoWeb.Gettext
+      use Gettext, backend: YtmWeb.Gettext
 
       import Plug.Conn
 
@@ -80,16 +80,16 @@ defmodule KioskDemoWeb do
   defp html_helpers do
     quote do
       # Translation
-      use Gettext, backend: KioskDemoWeb.Gettext
+      use Gettext, backend: YtmWeb.Gettext
 
       # HTML escaping functionality
       import Phoenix.HTML
       # Core UI components
-      import KioskDemoWeb.CoreComponents
+      import YtmWeb.CoreComponents
 
       # Common modules used in templates
       alias Phoenix.LiveView.JS
-      alias KioskDemoWeb.Layouts
+      alias YtmWeb.Layouts
 
       # Routes generation with the ~p sigil
       unquote(verified_routes())
@@ -99,9 +99,9 @@ defmodule KioskDemoWeb do
   def verified_routes do
     quote do
       use Phoenix.VerifiedRoutes,
-        endpoint: KioskDemoWeb.Endpoint,
-        router: KioskDemoWeb.Router,
-        statics: KioskDemoWeb.static_paths()
+        endpoint: YtmWeb.Endpoint,
+        router: YtmWeb.Router,
+        statics: YtmWeb.static_paths()
     end
   end
 

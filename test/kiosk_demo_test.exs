@@ -1,3 +1,3 @@
-defmodule KioskDemoTest do
+defmodule YtmTest do
   use ExUnit.Case
 end

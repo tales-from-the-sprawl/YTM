@@ -1,12 +1,12 @@
-defmodule KioskDemoWeb.ErrorJSONTest do
-  use KioskDemoWeb.ConnCase, async: true
+defmodule YtmWeb.ErrorJSONTest do
+  use YtmWeb.ConnCase, async: true
 
   test "renders 404" do
-    assert KioskDemoWeb.ErrorJSON.render("404.json", %{}) == %{errors: %{detail: "Not Found"}}
+    assert YtmWeb.ErrorJSON.render("404.json", %{}) == %{errors: %{detail: "Not Found"}}
   end
 
   test "renders 500" do
-    assert KioskDemoWeb.ErrorJSON.render("500.json", %{}) ==
+    assert YtmWeb.ErrorJSON.render("500.json", %{}) ==
              %{errors: %{detail: "Internal Server Error"}}
   end
 end

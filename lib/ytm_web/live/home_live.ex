@@ -1,5 +1,5 @@
-defmodule KioskDemoWeb.HomeLive do
-  use KioskDemoWeb, :live_view
+defmodule YtmWeb.HomeLive do
+  use YtmWeb, :live_view
 
   def mount(_params, _session, socket) do
     {:ok, name} = :inet.gethostname()

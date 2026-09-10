@@ -1,4 +1,4 @@
-defmodule KioskDemoWeb.CoreComponents do
+defmodule YtmWeb.CoreComponents do
   @moduledoc """
   Provides core UI components.
 
@@ -27,14 +27,14 @@ defmodule KioskDemoWeb.CoreComponents do
 
   """
   use Phoenix.Component
-  use Gettext, backend: KioskDemoWeb.Gettext
+  use Gettext, backend: YtmWeb.Gettext
 
   alias Phoenix.LiveView.JS
 
   use Phoenix.VerifiedRoutes,
-    endpoint: KioskDemoWeb.Endpoint,
-    router: KioskDemoWeb.Router,
-    statics: KioskDemoWeb.static_paths()
+    endpoint: YtmWeb.Endpoint,
+    router: YtmWeb.Router,
+    statics: YtmWeb.static_paths()
 
   @doc """
   Renders flash notices.
@@ -462,9 +462,9 @@ defmodule KioskDemoWeb.CoreComponents do
     # with our gettext backend as first argument. Translations are
     # available in the errors.po file (as we use the "errors" domain).
     if count = opts[:count] do
-      Gettext.dngettext(KioskDemoWeb.Gettext, "errors", msg, msg, count, opts)
+      Gettext.dngettext(YtmWeb.Gettext, "errors", msg, msg, count, opts)
     else
-      Gettext.dgettext(KioskDemoWeb.Gettext, "errors", msg, opts)
+      Gettext.dgettext(YtmWeb.Gettext, "errors", msg, opts)
     end
   end
 

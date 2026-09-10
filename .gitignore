@@ -31,3 +31,5 @@ erl_crash.dump
 # In case you use Node.js/npm, you want to ignore these.
 npm-debug.log
 /assets/node_modules/
+
+.dexter/

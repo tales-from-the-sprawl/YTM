@@ -1,4 +1,4 @@
-defmodule KioskDemo.Cog do
+defmodule Ytm.Cog do
   @moduledoc """
   D-Bus client for the Cog browser.
 

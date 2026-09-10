@@ -1,4 +1,4 @@
-defmodule KioskDemo.Application do
+defmodule Ytm.Application do
   # See https://elixir.hexdocs.pm/Application.html
   # for more information on OTP Applications
   @moduledoc false
@@ -14,13 +14,13 @@ defmodule KioskDemo.Application do
     children =
       [
         # Children for all targets
-        # Starts a worker by calling: KioskDemo.Worker.start_link(arg)
-        # {KioskDemo.Worker, arg},
+        # Starts a worker by calling: Ytm.Worker.start_link(arg)
+        # {Ytm.Worker, arg},
       ] ++ phoenix_children() ++ children()
 
     # See https://elixir.hexdocs.pm/Supervisor.html
     # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: KioskDemo.Supervisor]
+    opts = [strategy: :one_for_one, name: Ytm.Supervisor]
     Supervisor.start_link(children, opts)
   end
 
@@ -29,23 +29,23 @@ defmodule KioskDemo.Application do
     defp children() do
       [
         # Children that only run on the host
-        # Starts a worker by calling: KioskDemo.Worker.start_link(arg)
-        # {KioskDemo.Worker, arg},
+        # Starts a worker by calling: Ytm.Worker.start_link(arg)
+        # {Ytm.Worker, arg},
       ]
     end
   else
     defp children() do
       # NOTE: work around to stop watchers on targets
-      Application.get_env(:kiosk_demo, KioskDemoWeb.Endpoint)
+      Application.get_env(:ytm, YtmWeb.Endpoint)
       |> Keyword.put(:watchers, [])
-      |> then(&Application.put_env(:kiosk_demo, KioskDemoWeb.Endpoint, &1))
+      |> then(&Application.put_env(:ytm, YtmWeb.Endpoint, &1))
 
       [
         # Children for all targets except host
-        # Starts a worker by calling: KioskDemo.Worker.start_link(arg)
-        # {KioskDemo.Worker, arg},
-        {KioskDemo.UdevdServer, []},
-        {KioskDemo.KioskSupervisor, []},
+        # Starts a worker by calling: Ytm.Worker.start_link(arg)
+        # {Ytm.Worker, arg},
+        {Ytm.UdevdServer, []},
+        {Ytm.KioskSupervisor, []},
         {Task, &start_node/0}
       ]
     end
@@ -59,13 +59,13 @@ defmodule KioskDemo.Application do
 
   defp phoenix_children() do
     [
-      KioskDemoWeb.Telemetry,
-      {DNSCluster, query: Application.get_env(:kiosk_demo, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: KioskDemo.PubSub},
-      # Start a worker by calling: KioskDemo.Worker.start_link(arg)
-      # {KioskDemo.Worker, arg},
+      YtmWeb.Telemetry,
+      {DNSCluster, query: Application.get_env(:ytm, :dns_cluster_query) || :ignore},
+      {Phoenix.PubSub, name: Ytm.PubSub},
+      # Start a worker by calling: Ytm.Worker.start_link(arg)
+      # {Ytm.Worker, arg},
       # Start to serve requests, typically the last entry
-      KioskDemoWeb.Endpoint
+      YtmWeb.Endpoint
     ]
   end
 

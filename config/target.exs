@@ -1,7 +1,5 @@
 import Config
 
-config :nerves_runtime, startup_guard_enabled: true
-
 config :myelin,
   trusted_origins: ["http://localhost:4000"],
   scripts: %{
@@ -20,6 +18,13 @@ config :logger, backends: [RingLogger]
 
 config :shoehorn, init: [:nerves_runtime, :nerves_pack]
 
+# Enable the system startup guard to check that all OTP applications
+# started. If they didn't and you're on a Nerves system that supports
+# test runs of new firmware, the firmware will automatically roll
+# back to the previous version. Delete this if implementing your own
+# way of validating that firmware is good.
+config :nerves_runtime, startup_guard_enabled: true
+
 # Erlinit can be configured without a rootfs_overlay. See
 # https://github.com/nerves-project/erlinit/ for more information on
 # configuring erlinit.
@@ -32,11 +37,21 @@ config :nerves, :erlinit, update_clock: true
 # * See https://nerves-ssh.hexdocs.pm/readme.html for general SSH configuration
 # * See https://ssh-subsystem-fwup.hexdocs.pm/readme.html for firmware updates
 
+keys =
+  System.user_home!()
+  |> Path.join(".ssh/id_{rsa,ecdsa,ed25519}.pub")
+  |> Path.wildcard()
+
+if keys == [],
+  do:
+    Mix.raise("""
+    No SSH public keys found in ~/.ssh. An ssh authorized key is needed to
+    log into the Nerves device and update firmware on it using ssh.
+    See your project's config.exs for this error message.
+    """)
+
 config :nerves_ssh,
-  daemon_option_overrides: [
-    pwdfun: {KioskDemo, :ssh_check_pass, 2},
-    auth_method_kb_interactive_data: {KioskDemo, :ssh_show_prompt, 3}
-  ]
+  authorized_keys: Enum.map(keys, &File.read!/1)
 
 # Common VintageNet configuration
 #
@@ -57,11 +72,13 @@ config :mdns_lite,
 
   hosts: [:hostname, "nerves"],
   ttl: 120,
+
   dns_bridge_enabled: true,
   dns_bridge_ip: {127, 0, 0, 53},
   dns_bridge_port: 53,
   dns_bridge_recursive: false,
   ipv4_only: false,
+  
   # Advertise the following services over mDNS.
   services: [
     %{
