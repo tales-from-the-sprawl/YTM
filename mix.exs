@@ -30,7 +30,7 @@ defmodule Ytm.MixProject do
   def application do
     [
       extra_applications: [:logger, :runtime_tools],
-      mod: {YTM.Application, []}
+      mod: {Ytm.Application, []}
     ]
   end
 
