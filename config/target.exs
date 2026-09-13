@@ -1,10 +1,11 @@
 import Config
 
 config :myelin,
-  trusted_origins: ["http://localhost:4000"],
-  scripts: %{
-    "screensaver" => %{enabled: true, idle: 60}
-  }
+  trusted_origins: ["http://localhost:4000"]
+
+# scripts: %{
+#   "screensaver" => %{enabled: true, idle: 60}
+# }
 
 # Use Ringlogger as the logger backend and remove :console.
 # See https://ring-logger.hexdocs.pm/readme.html for more information on
@@ -72,13 +73,12 @@ config :mdns_lite,
 
   hosts: [:hostname, "nerves"],
   ttl: 120,
-
   dns_bridge_enabled: true,
   dns_bridge_ip: {127, 0, 0, 53},
   dns_bridge_port: 53,
   dns_bridge_recursive: false,
   ipv4_only: false,
-  
+
   # Advertise the following services over mDNS.
   services: [
     %{
