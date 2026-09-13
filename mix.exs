@@ -64,6 +64,7 @@ defmodule Ytm.MixProject do
       {:mix_tasks_upload_hotswap, "~> 0.1.0"},
       {:circuits_gpio, "~> 2.1"},
       {:dbus, "~> 0.8"},
+      {:pn532, path: "../pn532"},
 
       # Allow Nerves.Runtime on host to support development, testing and CI.
       # See config/host.exs for usage.
@@ -71,14 +72,13 @@ defmodule Ytm.MixProject do
 
       # Dependencies for all targets except :host
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
-      {:nerves_ssh, "~> 1.2", targets: @all_targets},
 
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
       # version updates, please review their release notes in case
       # changes to your application are needed.
-      {:kiosk_system_rpi4, "~> 2.1.2", runtime: false, targets: :rpi4},
+      {:kiosk_system_rpi4, "~> 2.1.2", runtime: false, targets: :rpi4}
     ] ++ phoenix_deps()
   end
 
@@ -145,8 +145,7 @@ defmodule Ytm.MixProject do
         "esbuild ytm --minify",
         "phx.digest"
       ],
-            precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
-
+      precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]
   end
 
