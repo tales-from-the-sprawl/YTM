@@ -46,6 +46,7 @@ defmodule Ytm.Application do
         # {Ytm.Worker, arg},
         {Ytm.UdevdServer, []},
         {Ytm.KioskSupervisor, []},
+        {PN532.Supervisor, [%{target_type: :iso_14443_type_a, connection: PN532.Connection.Spi}]},
         {Task, &start_node/0}
       ]
     end

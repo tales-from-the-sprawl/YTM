@@ -112,6 +112,10 @@ defmodule YtmWeb.HomeLive do
         background-color: #00d4ff;
       }
 
+      .icon-container.nfc {
+        background-color: #a78bfa;
+      }
+
       .icon-container.ssh {
         background-color: #38f9d7;
       }
@@ -180,6 +184,25 @@ defmodule YtmWeb.HomeLive do
                 class="btn btn-primary mt-4 w-full"
               >
                 <.icon name="hero-arrow-right" class="size-5" /> Open GPIO Control
+              </a>
+            </div>
+
+            <div class="card-hover rounded-2xl bg-white shadow-md p-6 border border-slate-200">
+              <div class="flex items-center gap-3 mb-4">
+                <div class="icon-container nfc">
+                  <.icon name="hero-credit-card" class="size-6 text-white" />
+                </div>
+                <p class="text-xl font-bold text-slate-800">PN532 NFC Debug</p>
+              </div>
+              <p class="mt-3 text-slate-600 leading-relaxed">
+                Query the PN532 NFC reader over SPI0 and watch target detection live -
+                useful for debugging the PN532 library.
+              </p>
+              <a
+                href="/nfc"
+                class="btn btn-primary mt-4 w-full"
+              >
+                <.icon name="hero-arrow-right" class="size-5" /> Open NFC Debug
               </a>
             </div>
 

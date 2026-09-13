@@ -20,6 +20,7 @@ defmodule YtmWeb.Router do
     live "/", HomeLive
     live "/dashboard", DashboardLive
     live "/gpio", GPIOLive
+    live "/nfc", NFCLive
     get "/loading", LoadingController, :show
   end
 
