@@ -53,7 +53,7 @@ defmodule Ytm.Application do
 
     defp start_node() do
       {_, 0} = System.cmd("epmd", ~w"-daemon")
-      _ = Node.start(:"kiosk_demo@nerves.local")
+      _ = Node.start(:"ytm@nerves.local")
       Node.set_cookie(Application.get_env(:mix_tasks_upload_hotswap, :cookie))
     end
   end
