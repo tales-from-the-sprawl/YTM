@@ -9,7 +9,7 @@ run = "mix firmware"
 
 [tasks.upload]
 env = { MIX_TARGET = 'rpi4' }
-run = "./upload.sh bar-banker"
+run = "./upload.sh ytm@nerves.local"
 
 [tasks.reload]
 env = { MIX_TARGET = 'rpi4' }
