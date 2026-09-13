@@ -13,23 +13,23 @@ defmodule YtmWeb.NFCLive do
 
   def render(assigns) do
     ~H"""
-    <div class="h-screen flex flex-col bg-slate-50">
-      <div class="bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3 shadow-sm">
+    <div class="h-screen flex flex-col bg-base-200">
+      <div class="bg-base-100 border-b border-base-300 px-4 py-3 flex items-center gap-3 shadow-sm">
         <a href="/" class="btn btn-sm btn-primary gap-2">
           <.icon name="hero-home" class="size-4" /> Home
         </a>
-        <span class="text-lg font-semibold text-slate-800">PN532 NFC Debug</span>
+        <span class="text-lg font-semibold">PN532 NFC Debug</span>
       </div>
 
       <div class="px-4 py-6 overflow-auto space-y-6">
-        <%= if not @available do %>
-          <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
+        <%= if @available do %>
+          <div class="alert alert-warning">
             <div class="flex items-start gap-3">
               <.icon
                 name="hero-exclamation-triangle"
-                class="size-5 text-amber-600 mt-0.5 flex-shrink-0"
+                class="size-5 mt-0.5 flex-shrink-0"
               />
-              <div class="text-sm text-amber-900">
+              <div class="text-sm">
                 <p class="font-semibold mb-1">PN532 client is not running</p>
                 <p>
                   The PN532 client only starts on the `:rpi4` target. On `:host` there is no SPI
@@ -39,10 +39,10 @@ defmodule YtmWeb.NFCLive do
             </div>
           </div>
         <% else %>
-          <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div class="alert alert-info">
             <div class="flex items-start gap-3">
-              <.icon name="hero-information-circle" class="size-5 text-blue-600 mt-0.5 flex-shrink-0" />
-              <div class="text-sm text-blue-900">
+              <.icon name="hero-information-circle" class="size-5 mt-0.5 flex-shrink-0" />
+              <div class="text-sm">
                 <p class="font-semibold mb-1">NFC Debug Panel</p>
                 <p>
                   Talks directly to <code>PN532.Client</code>, connected over SPI0. Use the
@@ -52,79 +52,74 @@ defmodule YtmWeb.NFCLive do
             </div>
           </div>
 
-          <div class="bg-white border border-slate-200 rounded-lg p-4">
-            <h2 class="text-lg font-bold text-slate-800 mb-4">
+          <div class="bg-base-100 border border-base-300 rounded-box p-4">
+            <h2 class="text-lg font-bold mb-4">
               <.icon name="hero-wrench-screwdriver" class="size-5 inline" /> Diagnostics
             </h2>
 
             <div class="flex flex-wrap gap-3 mb-4">
               <button
                 phx-click="get_firmware_version"
-                class="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700"
+                class="btn btn-primary"
               >
                 Get Firmware Version
               </button>
               <button
                 phx-click="get_general_status"
-                class="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700"
+                class="btn btn-primary"
               >
                 Get General Status
               </button>
               <button
                 phx-click={if @detecting, do: "stop_detection", else: "start_detection"}
-                class={[
-                  "px-4 py-2 rounded-lg font-semibold text-sm",
-                  if(@detecting,
-                    do: "bg-red-600 text-white hover:bg-red-700",
-                    else: "bg-green-600 text-white hover:bg-green-700"
-                  )
-                ]}
+                class="btn btn-success aria-active:btn-error"
+                aria-active={@detecting}
               >
                 {if @detecting, do: "Stop Target Detection", else: "Start Target Detection"}
               </button>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                <p class="text-sm font-semibold text-slate-600 mb-2">Firmware Version</p>
-                <pre class="text-xs font-mono text-slate-800 whitespace-pre-wrap">{inspect(@firmware_version, pretty: true)}</pre>
+              <div class="bg-base-200 border border-base-300 rounded-box p-4">
+                <p class="text-sm font-semibold mb-2">Firmware Version</p>
+                <pre class="text-xs font-mono whitespace-pre-wrap">{inspect(@firmware_version, pretty: true)}</pre>
               </div>
-              <div class="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                <p class="text-sm font-semibold text-slate-600 mb-2">General Status</p>
-                <pre class="text-xs font-mono text-slate-800 whitespace-pre-wrap">{inspect(@general_status, pretty: true)}</pre>
+              <div class="bg-base-200 border border-base-300 rounded-box p-4">
+                <p class="text-sm font-semibold mb-2">General Status</p>
+                <pre class="text-xs font-mono whitespace-pre-wrap">{inspect(@general_status, pretty: true)}</pre>
               </div>
             </div>
           </div>
 
-          <div class="bg-white border border-slate-200 rounded-lg p-4">
-            <h2 class="text-lg font-bold text-slate-800 mb-4">
+          <div class="bg-base-100 border border-base-300 rounded-box p-4">
+            <h2 class="text-lg font-bold mb-4">
               <.icon name="hero-credit-card" class="size-5 inline" />
               Target Detection {if @detecting, do: "(active)", else: "(stopped)"}
             </h2>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                <p class="text-sm font-semibold text-slate-600 mb-2">Current Cards</p>
+              <div class="bg-base-200 border border-base-300 rounded-box p-4">
+                <p class="text-sm font-semibold mb-2">Current Cards</p>
                 <%= if @current_cards in [nil, []] do %>
-                  <p class="text-sm text-slate-400 italic">None</p>
+                  <p class="text-sm italic">None</p>
                 <% else %>
                   <div class="space-y-2">
                     <%= for card <- @current_cards do %>
-                      <div class="text-xs font-mono bg-white border border-slate-200 rounded p-2">
+                      <div class="text-xs font-mono bg-white border border-base-300 rounded-field p-2">
                         {format_card(card)}
                       </div>
                     <% end %>
                   </div>
                 <% end %>
               </div>
-              <div class="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                <p class="text-sm font-semibold text-slate-600 mb-2">Detected Cards</p>
+              <div class="bg-base-200 border border-base-300 rounded-box p-4">
+                <p class="text-sm font-semibold mb-2">Detected Cards</p>
                 <%= if @detected_cards in [nil, []] do %>
-                  <p class="text-sm text-slate-400 italic">None</p>
+                  <p class="text-sm italic">None</p>
                 <% else %>
                   <div class="space-y-2">
                     <%= for card <- @detected_cards do %>
-                      <div class="text-xs font-mono bg-white border border-slate-200 rounded p-2">
+                      <div class="text-xs font-mono bg-white border border-base-300 rounded-field p-2">
                         {format_card(card)}
                       </div>
                     <% end %>

@@ -129,7 +129,7 @@ defmodule YtmWeb.HomeLive do
       }
     </style>
 
-    <div class="relative min-h-screen bg-slate-50">
+    <div class="relative min-h-screen bg-base-200">
       <div class="px-4 py-10 sm:px-6 sm:py-12 lg:px-8 xl:px-28 xl:py-16">
         <div class="mx-auto max-w-6xl">
           <div class="text-center mb-16">
@@ -142,21 +142,21 @@ defmodule YtmWeb.HomeLive do
               </p>
             </div>
 
-            <p class="mt-6 text-xl text-slate-700 max-w-2xl mx-auto leading-relaxed">
+            <p class="mt-6 text-xl max-w-2xl mx-auto leading-relaxed">
               A full-screen web browser experience with real-time capabilities,
               running on embedded hardware
             </p>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="card-hover rounded-2xl bg-white shadow-md p-6 border border-slate-200">
+            <div class="card-hover rounded-2xl bg-base-100 shadow-md p-6 border border-base-300">
               <div class="flex items-center gap-3 mb-4">
                 <div class="icon-container dashboard">
                   <.icon name="hero-chart-bar" class="size-6 text-white" />
                 </div>
-                <p class="text-xl font-bold text-slate-800">Phoenix LiveDashboard</p>
+                <p class="text-xl font-bold">Phoenix LiveDashboard</p>
               </div>
-              <p class="mt-3 text-slate-600 leading-relaxed">
+              <p class="mt-3 leading-relaxed">
                 View real-time metrics, introspect processes, and monitor your application's
                 performance with interactive visualizations.
               </p>
@@ -168,14 +168,14 @@ defmodule YtmWeb.HomeLive do
               </a>
             </div>
 
-            <div class="card-hover rounded-2xl bg-white shadow-md p-6 border border-slate-200">
+            <div class="card-hover rounded-2xl bg-base-100 shadow-md p-6 border border-base-300">
               <div class="flex items-center gap-3 mb-4">
                 <div class="icon-container gpio">
                   <.icon name="hero-bolt" class="size-6 text-white" />
                 </div>
-                <p class="text-xl font-bold text-slate-800">GPIO Control</p>
+                <p class="text-xl font-bold">GPIO Control</p>
               </div>
-              <p class="mt-3 text-slate-600 leading-relaxed">
+              <p class="mt-3 leading-relaxed">
                 Interact with hardware GPIO pins directly from your browser. Control outputs
                 and monitor inputs in real-time.
               </p>
@@ -187,14 +187,14 @@ defmodule YtmWeb.HomeLive do
               </a>
             </div>
 
-            <div class="card-hover rounded-2xl bg-white shadow-md p-6 border border-slate-200">
+            <div class="card-hover rounded-2xl bg-base-100 shadow-md p-6 border border-base-300">
               <div class="flex items-center gap-3 mb-4">
                 <div class="icon-container nfc">
                   <.icon name="hero-credit-card" class="size-6 text-white" />
                 </div>
-                <p class="text-xl font-bold text-slate-800">PN532 NFC Debug</p>
+                <p class="text-xl font-bold">PN532 NFC Debug</p>
               </div>
-              <p class="mt-3 text-slate-600 leading-relaxed">
+              <p class="mt-3 leading-relaxed">
                 Query the PN532 NFC reader over SPI0 and watch target detection live -
                 useful for debugging the PN532 library.
               </p>
@@ -206,72 +206,71 @@ defmodule YtmWeb.HomeLive do
               </a>
             </div>
 
-            <div class="card-hover rounded-2xl bg-white shadow-md p-6 border border-slate-200">
+            <div class="card-hover rounded-2xl bg-base-100 shadow-md p-6 border border-base-300">
               <div class="flex items-center gap-3 mb-4">
                 <div class="icon-container ssh">
                   <.icon name="hero-computer-desktop" class="size-6 text-white" />
                 </div>
-                <p class="text-xl font-bold text-slate-800">SSH Access</p>
+                <p class="text-xl font-bold">SSH Access</p>
               </div>
-              <p class="mt-3 text-slate-600 mb-4 leading-relaxed">
+              <p class="mt-3 mb-4 leading-relaxed">
                 Connect via SSH to access an IEx shell for debugging and system management:
               </p>
               <pre class="bg-slate-900 text-green-400 p-4 rounded-lg text-sm font-mono"><code>ssh kiosk@{(@hostname || "nerves-xxxx")}.local</code></pre>
-              <div class="mt-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                <p class="text-sm text-slate-600">
-                  Default password:
-                  <span class="font-bold text-slate-800 bg-yellow-100 px-2 py-1 rounded">kiosk</span>
+              <div class="mt-4 bg-base-content/10 p-3 rounded-lg border border-base-300">
+                <p class="text-sm">
+                  Default password: <span class="badge badge-warning ml-1">kiosk</span>
                 </p>
               </div>
             </div>
 
-            <div class="card-hover rounded-2xl bg-white shadow-md p-6 border border-slate-200">
+            <div class="card-hover rounded-2xl bg-base-100 shadow-md p-6 border border-base-300">
               <div class="flex items-center gap-3 mb-4">
                 <div class="icon-container system">
                   <.icon name="hero-cpu-chip" class="size-6 text-white" />
                 </div>
-                <p class="text-xl font-bold text-slate-800">System Information</p>
+                <p class="text-xl font-bold">System Information</p>
               </div>
               <div class="mt-4">
                 <table class="w-full text-sm">
                   <tbody class="divide-y divide-slate-200">
-                    <tr class="hover:bg-slate-50">
-                      <td class="py-3 pr-4 font-semibold text-slate-700">Serial Number</td>
-                      <td class="py-3 text-slate-900 break-all font-mono text-xs">
+                    <tr class="hover:bg-neutral">
+                      <td class="py-3 pr-4 font-semibold">Serial Number</td>
+                      <td class="py-3 break-all font-mono text-xs">
                         {@system_info.serial_number}
                       </td>
                     </tr>
-                    <tr class="hover:bg-slate-50">
-                      <td class="py-3 pr-4 font-semibold text-slate-700">Architecture</td>
-                      <td class="py-3 text-slate-900">
+                    <tr class="hover:bg-neutral">
+                      <td class="py-3 pr-4 font-semibold">Architecture</td>
+                      <td class="py-3">
                         {@system_info.firmware.architecture}
                       </td>
                     </tr>
-                    <tr class="hover:bg-slate-50">
-                      <td class="py-3 pr-4 font-semibold text-slate-700">Platform</td>
-                      <td class="py-3 text-slate-900">{@system_info.firmware.platform}</td>
+                    <tr class="hover:bg-neutral">
+                      <td class="py-3 pr-4 font-semibold">Platform</td>
+                      <td class="py-3">{@system_info.firmware.platform}</td>
                     </tr>
-                    <tr class="hover:bg-slate-50">
-                      <td class="py-3 pr-4 font-semibold text-slate-700">Version</td>
-                      <td class="py-3 text-slate-900">{@system_info.firmware.version}</td>
+                    <tr class="hover:bg-neutral">
+                      <td class="py-3 pr-4 font-semibold">Version</td>
+                      <td class="py-3">{@system_info.firmware.version}</td>
                     </tr>
-                    <tr class="hover:bg-slate-50">
-                      <td class="py-3 pr-4 font-semibold text-slate-700">Description</td>
-                      <td class="py-3 text-slate-900">
+                    <tr class="hover:bg-neutral">
+                      <td class="py-3 pr-4 font-semibold">Description</td>
+                      <td class="py-3">
                         {@system_info.firmware.description}
                       </td>
                     </tr>
                     <%= if length(@system_info.ip_addresses) > 0 do %>
-                      <tr class="hover:bg-slate-50">
-                        <td class="py-3 pr-4 font-semibold text-slate-700 align-top">IP Addresses</td>
-                        <td class="py-3 text-slate-900">
+                      <tr class="hover:bg-neutral">
+                        <td class="py-3 pr-4 font-semibold align-top">IP Addresses</td>
+                        <td class="py-3">
                           <div class="space-y-1">
                             <%= for ip <- @system_info.ip_addresses do %>
                               <div class="flex items-center gap-2">
-                                <span class="font-mono text-xs bg-slate-100 px-2 py-1 rounded">
+                                <span class="font-mono text-xs bg-base-content/10 px-2 py-1 rounded-field">
                                   {ip.address}
                                 </span>
-                                <span class="text-xs text-slate-500">({ip.interface})</span>
+                                <span class="text-xs text-base-content/50">({ip.interface})</span>
                               </div>
                             <% end %>
                           </div>
@@ -283,30 +282,30 @@ defmodule YtmWeb.HomeLive do
               </div>
             </div>
 
-            <div class="card-hover rounded-2xl bg-white shadow-md p-6 border border-slate-200 md:col-span-2">
+            <div class="card-hover rounded-2xl bg-base-100 shadow-md p-6 border border-base-300 md:col-span-2">
               <div class="flex flex-col md:flex-row items-start md:items-center gap-6">
                 <div class="flex-1">
                   <div class="flex items-center gap-3 mb-4">
                     <div class="icon-container info">
                       <.icon name="hero-information-circle" class="size-6 text-white" />
                     </div>
-                    <p class="text-xl font-bold text-slate-800">Learn More</p>
+                    <p class="text-xl font-bold">Learn More</p>
                   </div>
-                  <p class="mt-3 text-slate-600 leading-relaxed mb-4">
+                  <p class="mt-3 leading-relaxed mb-4">
                     Source code, documentation, and community support are available on GitHub.
                     Scan the QR code or visit the repository to get started:
                   </p>
                   <a
                     href="https://github.com/nerves-web-kiosk/kiosk_demo"
                     target="_blank"
-                    class="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium"
+                    class="link inline-flex gap-1 items-center"
                   >
                     <.icon name="hero-arrow-top-right-on-square" class="size-5" />
                     github.com/nerves-web-kiosk/kiosk_demo
                   </a>
                 </div>
                 <div class="flex justify-center md:justify-end">
-                  <div class="bg-slate-50 p-4 rounded-xl border-2 border-slate-200">
+                  <div class="bg-slate-50 p-4 rounded-xl border-2 border-base-300">
                     <img
                       alt="QR code for source repository"
                       src={~p"/images/qr_source.png"}
