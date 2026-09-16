@@ -112,7 +112,7 @@ defmodule Ytm.PN532 do
 
   @doc "Retrieves the UID of a target found after `listen_for_passive_target/2`."
   @spec get_passive_target(t(), non_neg_integer()) ::
-          {:ok, binary()} | {:error, error() | :too_many_cards | :uid_too_long}
+          {:ok, binary()} | {:error, error() | :no_target_found | :too_many_cards | :uid_too_long}
   def get_passive_target(pn532, timeout_ms \\ @default_timeout_ms) do
     with {:ok, response} <-
            process_response(pn532, @command_in_list_passive_target, 64, timeout_ms) do
@@ -122,7 +122,7 @@ defmodule Ytm.PN532 do
 
   @doc "Combines `listen_for_passive_target/2` and `get_passive_target/2` into a single call."
   @spec read_passive_target(t(), byte(), non_neg_integer()) ::
-          {:ok, binary()} | {:error, error() | :too_many_cards | :uid_too_long}
+          {:ok, binary()} | {:error, error() | :no_target_found | :too_many_cards | :uid_too_long}
   def read_passive_target(
         pn532,
         card_baud \\ @mifare_iso14443a,
@@ -259,7 +259,7 @@ defmodule Ytm.PN532 do
   end
 
   @spec parse_passive_target(binary()) ::
-          {:ok, binary()} | {:error, :too_many_cards | :uid_too_long}
+          {:ok, binary()} | {:error, :no_target_found | :too_many_cards | :uid_too_long}
   defp parse_passive_target(
          <<1, _tg, _sens_res::binary-size(2), _sel_res, uid_len, rest::binary>>
        )
@@ -269,6 +269,7 @@ defmodule Ytm.PN532 do
   end
 
   defp parse_passive_target(<<1, _rest::binary>>), do: {:error, :uid_too_long}
+  defp parse_passive_target(<<0, _rest::binary>>), do: {:error, :no_target_found}
   defp parse_passive_target(_response), do: {:error, :too_many_cards}
 
   @spec parse_value_block(binary()) :: {:ok, integer()} | {:error, :invalid_value_block}
