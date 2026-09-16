@@ -22,7 +22,7 @@ defmodule YtmWeb.NFCLive do
       </div>
 
       <div class="px-4 py-6 overflow-auto space-y-6">
-        <%= if @available do %>
+        <%= if not @available do %>
           <div class="alert alert-warning">
             <div class="flex items-start gap-3">
               <.icon
@@ -72,8 +72,8 @@ defmodule YtmWeb.NFCLive do
               </button>
               <button
                 phx-click={if @detecting, do: "stop_detection", else: "start_detection"}
-                class="btn btn-success aria-active:btn-error"
-                aria-active={@detecting}
+                class="btn btn-success aria-pressed:btn-error"
+                aria-pressed={"#{@detecting}"}
               >
                 {if @detecting, do: "Stop Target Detection", else: "Start Target Detection"}
               </button>
