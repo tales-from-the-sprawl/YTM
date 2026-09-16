@@ -35,7 +35,10 @@ defmodule Ytm.MixProject do
   end
 
   def cli do
-    [preferred_envs: %{docs: :docs}, preferred_target: %{run: :host, test: :host}]
+    [
+      preferred_envs: %{docs: :docs, precommit: :test},
+      preferred_target: %{run: :host, test: :host}
+    ]
   end
 
   # Specifies which paths to compile per environment.
