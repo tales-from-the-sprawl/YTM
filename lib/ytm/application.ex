@@ -5,8 +5,6 @@ defmodule Ytm.Application do
 
   use Application
 
-  alias Nerves.Runtime.KV
-
   @impl Application
   def start(_type, _args) do
     setup_wifi()
@@ -46,7 +44,6 @@ defmodule Ytm.Application do
         # {Ytm.Worker, arg},
         {Ytm.UdevdServer, []},
         {Ytm.KioskSupervisor, []},
-        {PN532.Supervisor, [%{target_type: :iso_14443_type_a, connection: PN532.Connection.Spi}]},
         {Task, &start_node/0}
       ]
     end
@@ -76,6 +73,7 @@ defmodule Ytm.Application do
     end
   else
     defp setup_wifi() do
+      alias Nerves.Runtime.KV
       kv = KV.get_all()
 
       if true?(kv["wifi_force"]) or not wlan0_configured?() do

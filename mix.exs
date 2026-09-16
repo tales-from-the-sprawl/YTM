@@ -63,8 +63,8 @@ defmodule Ytm.MixProject do
       {:myelin, "~> 0.1.1"},
       {:mix_tasks_upload_hotswap, "~> 0.1.0"},
       {:circuits_gpio, "~> 2.1"},
+      {:circuits_spi, "~> 2.1"},
       {:dbus, "~> 0.8"},
-      {:pn532, path: "../pn532"},
 
       # Allow Nerves.Runtime on host to support development, testing and CI.
       # See config/host.exs for usage.
