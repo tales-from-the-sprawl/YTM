@@ -14,6 +14,7 @@ defmodule Ytm.PN532 do
   arguments (wrong block-data size) raise, via function guards.
   """
 
+  alias Ytm.NDEF
   alias Ytm.PN532.Frame
   alias Ytm.PN532.SPI
 
@@ -46,6 +47,9 @@ defmodule Ytm.PN532 do
 
   @default_timeout_ms 1000
   @firmware_timeout_ms 500
+
+  @ndef_start_page 4
+  @ndef_max_pages 231
 
   @doc """
   Opens the SPI bus, resets and wakes the PN532, puts it in normal (SAM)
@@ -223,6 +227,31 @@ defmodule Ytm.PN532 do
     with {:ok, <<status, _rest::binary>>} <-
            call_function(pn532, @command_in_data_exchange, params, 1) do
       {:ok, status == 0}
+    end
+  end
+
+  @doc """
+  Reads the raw NDEF message from an NTAG21x tag's user memory, starting at
+  page 4 and unwrapping the TLV block structure. Reads stop as soon as the
+  tag reports an out-of-bounds block (end of its memory) or the NDEF
+  message has been found.
+  """
+  @spec read_ndef(t()) :: {:ok, binary()} | {:error, error() | NDEF.reason()}
+  def read_ndef(pn532) do
+    with {:ok, data} <- read_pages(pn532, @ndef_start_page, @ndef_max_pages, <<>>) do
+      NDEF.decode(data)
+    end
+  end
+
+  @spec read_pages(t(), byte(), non_neg_integer(), binary()) ::
+          {:ok, binary()} | {:error, error()}
+  defp read_pages(_pn532, _page, 0, acc), do: {:ok, acc}
+
+  defp read_pages(pn532, page, remaining, acc) do
+    case ntag2xx_read_block(pn532, page) do
+      {:ok, data} -> read_pages(pn532, page + 1, remaining - 1, acc <> data)
+      {:error, {:mifare_status, _status}} -> {:ok, acc}
+      {:error, _reason} = error -> error
     end
   end
 
