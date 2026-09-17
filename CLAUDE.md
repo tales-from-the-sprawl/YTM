@@ -43,7 +43,12 @@ Also available via mise tasks (already set `MIX_TARGET=rpi4`): `mise run firmwar
 `mise run upload`, `mise run reload` (hot-swaps code onto a running device via
 `mix_tasks_upload_hotswap`, uses `upload.sh`).
 
-SSH into a running device: `ssh kiosk@nerves-xxxx.local` (password `kiosk`) for an IEx console.
+SSH into a running device: `ssh ytm@nerves.local` (key-based, no password) drops straight into an
+IEx console on the device. `nerves.local` is the default mDNS hostname (see `upload.sh`/
+`mise.toml`); use the device's actual hostname/IP if mDNS isn't resolving. `mix upload.hotswap`
+(the `mise run reload` task) can push recompiled `.beam` files to a running device over this same
+distributed-Erlang connection without a full firmware rebuild — handy for iterating on a bug and
+verifying the fix against real hardware before committing to a `mix firmware`/`mix burn` cycle.
 
 ### Tests, formatting, linting
 
@@ -100,12 +105,39 @@ bus set up above.
 `Ytm.UdevdServer` runs `udevd` and triggers/settles udev so device nodes (like `/dev/dri/cardN`)
 exist before Cog starts.
 
+### NFC reader (`Ytm.PN532`)
+
+`Ytm.PN532` (`lib/ytm/pn532.ex`) is a from-scratch SPI driver for the PN532 NFC/RFID IC (a port of
+Adafruit's CircuitPython `adafruit_pn532` SPI backend; see NXP UM0701-02), built on
+`Ytm.PN532.SPI` (bus transport) and `Ytm.PN532.Frame` (host-controller-interface framing). It's a
+stateless module — `open/2` returns a `%Ytm.PN532{}` wrapping a `Circuits.SPI` handle, and there's
+no supervised connection/detection process, so callers own opening, polling, and closing it
+themselves (see `YtmWeb.NFCLive` below).
+
+`read_ndef/3` reads a detected tag's NDEF message, dispatching on its SAK (from
+`get_passive_target/2`/`read_passive_target/3`, which return `{uid, sak}`): NTAG21x/Ultralight
+tags (NFC Forum Type 2, SAK `0x00`) are read via unauthenticated paged reads starting at page 4;
+Mifare Classic-compliant tags (SAK bit 3 set, e.g. `0x08` for Classic 1K) go through
+`mifare_classic_read_ndef/2`, which authenticates sector 0 with the well-known MAD key
+(`A0A1A2A3A4A5`) to parse the MAD (Mifare Application Directory) for sectors marked with the NDEF
+application id, then authenticates and reads each of those sectors with the well-known NDEF key
+(`D3F7D3F7D3F7`), skipping trailer blocks. Only the single-MAD, 16-sector Classic 1K layout is
+supported (no MAD2/4K). `Ytm.NDEF` (`lib/ytm/ndef.ex`) then unwraps the NFC Forum Type 2 Tag TLV
+block structure and decodes NDEF records, with helpers for the well-known Text and URI types.
+
+Note that a card's SAK alone doesn't guarantee which key scheme a Classic-compliant tag actually
+uses — `A0A1A2A3A4A5`/`D3F7D3F7D3F7` are just the NFC Forum/NXP-documented defaults for
+MAD+NDEF-formatted cards, not something the protocol enforces.
+
 ### Web app (`lib/ytm_web`)
 
 Standard Phoenix/LiveView structure. Routes (`router.ex`): `/` (`HomeLive`), `/dashboard`
-(`DashboardLive`), `/gpio` (`GPIOLive`), `/loading` (plain controller), and `/dev/dashboard`
-(Phoenix LiveDashboard). `GPIOLive` opens/reads/writes `Circuits.GPIO` pins directly — only
-meaningful on target; GPIO enumeration returns empty/errors on host.
+(`DashboardLive`), `/gpio` (`GPIOLive`), `/nfc` (`NFCLive`), `/loading` (plain controller), and
+`/dev/dashboard` (Phoenix LiveDashboard). `GPIOLive` opens/reads/writes `Circuits.GPIO` pins
+directly, and `NFCLive` opens/closes `Ytm.PN532` connections on both SPI0 chip-selects
+(`spidev0.0`/`spidev0.1`) directly, the same "LiveView owns the hardware handle for its own
+lifetime, closed in `terminate/2`" pattern in both cases — only meaningful on target; GPIO
+enumeration and SPI bus access return empty/errors on host.
 
 Assets: Tailwind + esbuild via the `:tailwind`/`:esbuild` Mix deps (no Node/npm build step), driven
 by the `assets.setup`/`assets.build`/`assets.deploy` aliases in `mix.exs`. Icons come from the
