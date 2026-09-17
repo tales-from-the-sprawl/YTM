@@ -36,6 +36,8 @@ defmodule Ytm.PN532 do
   @command_in_list_passive_target 0x4A
   @command_in_data_exchange 0x40
 
+  @mifare_cmd_auth_a 0x60
+  @mifare_cmd_auth_b 0x61
   @mifare_cmd_read 0x30
   @mifare_cmd_write 0xA0
   @mifare_cmd_transfer 0xB0
@@ -44,12 +46,25 @@ defmodule Ytm.PN532 do
   @ntag_ultralight_cmd_write 0xA2
 
   @mifare_iso14443a 0x00
+  @mifare_classic_sak_mask 0x08
 
   @default_timeout_ms 1000
   @firmware_timeout_ms 500
 
   @ndef_start_page 4
   @ndef_max_pages 231
+
+  @mad_key_a <<0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5>>
+  @mad_sector_block 1
+  @mad_ndef_aid <<0x03, 0xE1>>
+
+  @ndef_key_a <<0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7>>
+  @classic_blocks_per_sector 4
+
+  @type mad_error ::
+          :mad_authentication_failed
+          | :no_ndef_sectors
+          | {:sector_authentication_failed, byte()}
 
   @doc """
   Opens the SPI bus, resets and wakes the PN532, puts it in normal (SAM)
@@ -114,9 +129,10 @@ defmodule Ytm.PN532 do
     send_command(pn532, @command_in_list_passive_target, <<0x01, card_baud>>, @default_timeout_ms)
   end
 
-  @doc "Retrieves the UID of a target found after `listen_for_passive_target/2`."
+  @doc "Retrieves the `{uid, sak}` of a target found after `listen_for_passive_target/2`."
   @spec get_passive_target(t(), non_neg_integer()) ::
-          {:ok, binary()} | {:error, error() | :no_target_found | :too_many_cards | :uid_too_long}
+          {:ok, {binary(), byte()}}
+          | {:error, error() | :no_target_found | :too_many_cards | :uid_too_long}
   def get_passive_target(pn532, timeout_ms \\ @default_timeout_ms) do
     with {:ok, response} <-
            process_response(pn532, @command_in_list_passive_target, 64, timeout_ms) do
@@ -126,7 +142,8 @@ defmodule Ytm.PN532 do
 
   @doc "Combines `listen_for_passive_target/2` and `get_passive_target/2` into a single call."
   @spec read_passive_target(t(), byte(), non_neg_integer()) ::
-          {:ok, binary()} | {:error, error() | :no_target_found | :too_many_cards | :uid_too_long}
+          {:ok, {binary(), byte()}}
+          | {:error, error() | :no_target_found | :too_many_cards | :uid_too_long}
   def read_passive_target(
         pn532,
         card_baud \\ @mifare_iso14443a,
@@ -137,11 +154,12 @@ defmodule Ytm.PN532 do
     end
   end
 
-  @doc "Authenticates a Mifare Classic block with a key, ahead of a read or write."
+  @doc "Authenticates a Mifare Classic block with a key, ahead of a read or write. `key_number` is `0` for key A, `1` for key B."
   @spec mifare_classic_authenticate_block(t(), binary(), byte(), byte(), binary()) ::
           {:ok, boolean()} | {:error, error()}
   def mifare_classic_authenticate_block(pn532, uid, block_number, key_number, key) do
-    params = <<0x01, key_number, block_number, key::binary, uid::binary>>
+    auth_command = if key_number == 0, do: @mifare_cmd_auth_a, else: @mifare_cmd_auth_b
+    params = <<0x01, auth_command, block_number, key::binary, uid::binary>>
 
     with {:ok, <<status, _rest::binary>>} <-
            call_function(pn532, @command_in_data_exchange, params, 1) do
@@ -231,15 +249,120 @@ defmodule Ytm.PN532 do
   end
 
   @doc """
+  Reads the NDEF message off a detected tag, dispatching on its SAK (as
+  returned by `get_passive_target/2`): tags whose SAK marks them Mifare
+  Classic-compliant are read via `mifare_classic_read_ndef/2` (MAD lookup
+  plus per-sector authentication); everything else is read via
+  `ntag2xx_read_ndef/1` (unauthenticated NTAG21x page reads).
+  """
+  @spec read_ndef(t(), binary(), byte()) ::
+          {:ok, binary()} | {:error, error() | NDEF.reason() | mad_error()}
+  def read_ndef(pn532, uid, sak) do
+    if mifare_classic?(sak) do
+      mifare_classic_read_ndef(pn532, uid)
+    else
+      ntag2xx_read_ndef(pn532)
+    end
+  end
+
+  @doc """
   Reads the raw NDEF message from an NTAG21x tag's user memory, starting at
   page 4 and unwrapping the TLV block structure. Reads stop as soon as the
   tag reports an out-of-bounds block (end of its memory) or the NDEF
   message has been found.
   """
-  @spec read_ndef(t()) :: {:ok, binary()} | {:error, error() | NDEF.reason()}
-  def read_ndef(pn532) do
+  @spec ntag2xx_read_ndef(t()) :: {:ok, binary()} | {:error, error() | NDEF.reason()}
+  def ntag2xx_read_ndef(pn532) do
     with {:ok, data} <- read_pages(pn532, @ndef_start_page, @ndef_max_pages, <<>>) do
       NDEF.decode(data)
+    end
+  end
+
+  @doc """
+  Reads the raw NDEF message from a Mifare Classic 1K tag. Authenticates
+  sector 0 with the well-known MAD key A (`A0A1A2A3A4A5`) to read the MAD
+  (Mifare Application Directory) and find which sectors it marks with the
+  NDEF application id (`03E1`), then authenticates and reads each of those
+  sectors' 3 data blocks (skipping the trailer block that holds keys/access
+  bits) with the well-known NDEF key A (`D3F7D3F7D3F7`), concatenating them
+  in ascending sector order before unwrapping the TLV block structure.
+
+  Only the single-MAD, 16-sector Mifare Classic 1K layout is supported.
+  """
+  @spec mifare_classic_read_ndef(t(), binary()) ::
+          {:ok, binary()} | {:error, error() | NDEF.reason() | mad_error()}
+  def mifare_classic_read_ndef(pn532, uid) do
+    with {:ok, sectors} <- read_mad_ndef_sectors(pn532, uid),
+         {:ok, data} <- read_ndef_sectors(pn532, uid, sectors) do
+      NDEF.decode(data)
+    end
+  end
+
+  @spec mifare_classic?(byte()) :: boolean()
+  defp mifare_classic?(sak), do: Bitwise.band(sak, @mifare_classic_sak_mask) != 0
+
+  @spec read_mad_ndef_sectors(t(), binary()) ::
+          {:ok, [byte()]} | {:error, error() | :mad_authentication_failed}
+  defp read_mad_ndef_sectors(pn532, uid) do
+    with {:ok, true} <-
+           mifare_classic_authenticate_block(pn532, uid, @mad_sector_block, 0, @mad_key_a),
+         {:ok, block1} <- mifare_classic_read_block(pn532, @mad_sector_block),
+         {:ok, block2} <- mifare_classic_read_block(pn532, @mad_sector_block + 1) do
+      {:ok, parse_mad(block1, block2)}
+    else
+      {:ok, false} -> {:error, :mad_authentication_failed}
+      error -> error
+    end
+  end
+
+  @spec parse_mad(binary(), binary()) :: [byte()]
+  defp parse_mad(<<_crc, _info, sectors_1_to_7::binary-size(14)>>, sectors_8_to_15) do
+    (sectors_1_to_7 <> sectors_8_to_15)
+    |> aid_pairs()
+    |> Enum.with_index(1)
+    |> Enum.filter(fn {aid, _sector} -> aid == @mad_ndef_aid end)
+    |> Enum.map(fn {_aid, sector} -> sector end)
+  end
+
+  @spec aid_pairs(binary()) :: [binary()]
+  defp aid_pairs(<<aid::binary-size(2), rest::binary>>), do: [aid | aid_pairs(rest)]
+  defp aid_pairs(<<>>), do: []
+
+  @spec read_ndef_sectors(t(), binary(), [byte()]) ::
+          {:ok, binary()} | {:error, error() | mad_error()}
+  defp read_ndef_sectors(_pn532, _uid, []), do: {:error, :no_ndef_sectors}
+
+  defp read_ndef_sectors(pn532, uid, sectors) do
+    sectors
+    |> Enum.sort()
+    |> Enum.reduce_while({:ok, <<>>}, fn sector, {:ok, acc} ->
+      case read_ndef_sector(pn532, uid, sector) do
+        {:ok, data} -> {:cont, {:ok, acc <> data}}
+        error -> {:halt, error}
+      end
+    end)
+  end
+
+  @spec read_ndef_sector(t(), binary(), byte()) ::
+          {:ok, binary()} | {:error, error() | {:sector_authentication_failed, byte()}}
+  defp read_ndef_sector(pn532, uid, sector) do
+    first_block = sector * @classic_blocks_per_sector
+    trailer_block = first_block + @classic_blocks_per_sector - 1
+
+    case mifare_classic_authenticate_block(pn532, uid, first_block, 0, @ndef_key_a) do
+      {:ok, true} -> read_sector_data_blocks(pn532, first_block, trailer_block, <<>>)
+      {:ok, false} -> {:error, {:sector_authentication_failed, sector}}
+      error -> error
+    end
+  end
+
+  @spec read_sector_data_blocks(t(), byte(), byte(), binary()) ::
+          {:ok, binary()} | {:error, error()}
+  defp read_sector_data_blocks(_pn532, trailer_block, trailer_block, acc), do: {:ok, acc}
+
+  defp read_sector_data_blocks(pn532, block, trailer_block, acc) do
+    with {:ok, data} <- mifare_classic_read_block(pn532, block) do
+      read_sector_data_blocks(pn532, block + 1, trailer_block, acc <> data)
     end
   end
 
@@ -288,13 +411,11 @@ defmodule Ytm.PN532 do
   end
 
   @spec parse_passive_target(binary()) ::
-          {:ok, binary()} | {:error, :no_target_found | :too_many_cards | :uid_too_long}
-  defp parse_passive_target(
-         <<1, _tg, _sens_res::binary-size(2), _sel_res, uid_len, rest::binary>>
-       )
+          {:ok, {binary(), byte()}} | {:error, :no_target_found | :too_many_cards | :uid_too_long}
+  defp parse_passive_target(<<1, _tg, _sens_res::binary-size(2), sak, uid_len, rest::binary>>)
        when uid_len <= 7 do
     <<uid::binary-size(^uid_len), _rest::binary>> = rest
-    {:ok, uid}
+    {:ok, {uid, sak}}
   end
 
   defp parse_passive_target(<<1, _rest::binary>>), do: {:error, :uid_too_long}
