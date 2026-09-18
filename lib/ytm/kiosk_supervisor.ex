@@ -5,8 +5,8 @@ defmodule Ytm.KioskSupervisor do
   @runtime_dir "/run"
   @poll_ms 500
   @max_retries 20
-  @drm_dir "/dev/dri"
-  @drm_card_pattern ~r/^card[0-9]$/
+  @drm_sys_class_dir "/sys/class/drm"
+  @drm_connector_pattern ~r/^card[0-9]+-.+$/
   @dbus_socket_path "/run/dbus-session-bus"
   @dbus_session_bus_address "unix:path=#{@dbus_socket_path}"
 
@@ -57,7 +57,7 @@ defmodule Ytm.KioskSupervisor do
              log_prefix: "cog: ",
              wait_for: fn ->
                wait_for_path(@dbus_socket_path)
-               wait_for_match(@drm_dir, @drm_card_pattern)
+               wait_for_connected_display()
              end
            ]
          ]},
@@ -105,24 +105,42 @@ defmodule Ytm.KioskSupervisor do
     end
   end
 
-  defp wait_for_match(dir, regex, retries \\ @max_retries)
+  # Waiting for a /dev/dri/cardN node to exist isn't enough: the RPi4 exposes
+  # both vc4 (display) and v3d (render-only, no connectors) as separate DRM
+  # devices, and vc4's connector goes through async hotplug/EDID detection
+  # after its card node appears. Launching cog before a connector reports
+  # "connected" makes its DRM backend init fail intermittently, so wait on
+  # sysfs connector status instead.
+  defp wait_for_connected_display(retries \\ @max_retries)
 
-  defp wait_for_match(dir, regex, 0),
-    do: raise(RuntimeError, "no entry matching #{inspect(regex)} appeared in #{dir}")
+  defp wait_for_connected_display(0),
+    do: raise(RuntimeError, "no connected DRM display appeared in time")
 
-  defp wait_for_match(dir, regex, retries) do
-    case File.ls(dir) do
-      {:ok, files} ->
-        if Enum.any?(files, &Regex.match?(regex, &1)) do
-          :ok
-        else
-          Process.sleep(@poll_ms)
-          wait_for_match(dir, regex, retries - 1)
-        end
+  defp wait_for_connected_display(retries) do
+    if connected_display?() do
+      :ok
+    else
+      Process.sleep(@poll_ms)
+      wait_for_connected_display(retries - 1)
+    end
+  end
+
+  defp connected_display?() do
+    case File.ls(@drm_sys_class_dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.filter(&Regex.match?(@drm_connector_pattern, &1))
+        |> Enum.any?(&connector_connected?/1)
 
       {:error, _} ->
-        Process.sleep(@poll_ms)
-        wait_for_match(dir, regex, retries - 1)
+        false
+    end
+  end
+
+  defp connector_connected?(entry) do
+    case File.read(Path.join([@drm_sys_class_dir, entry, "status"])) do
+      {:ok, status} -> String.trim(status) == "connected"
+      {:error, _} -> false
     end
   end
 end
