@@ -12,8 +12,7 @@ defmodule Ytm.Application do
     children =
       [
         # Children for all targets
-        # Starts a worker by calling: Ytm.Worker.start_link(arg)
-        # {Ytm.Worker, arg},
+        Ytm.PN532.Supervisor
       ] ++ phoenix_children() ++ children()
 
     # See https://elixir.hexdocs.pm/Supervisor.html

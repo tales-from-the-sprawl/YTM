@@ -21,3 +21,6 @@ config :nerves_runtime,
      }}
 
 config :nerves_uevent, manage_udev: false
+
+# No SPI hardware on host; Ytm.PN532.Supervisor starts with no bus servers.
+config :ytm, Ytm.PN532.Supervisor, buses: []

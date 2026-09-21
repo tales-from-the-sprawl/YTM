@@ -3,15 +3,15 @@ defmodule YtmWeb.NFCLive do
   Debug page for the PN532 NFC readers, connected via SPI0 (`spidev0.0` and
   `spidev0.1`, i.e. both chip-selects on the bus).
 
-  Talks directly to `Ytm.PN532` - there is no supervised connection, so each
-  bus is opened/closed on demand from this LiveView process and released
-  when you navigate away.
+  Talks to `Ytm.PN532.Server`, a supervised connection per bus that's
+  shared with any other process and reconnects automatically after
+  failures or crashes - this LiveView never opens/closes a bus itself.
   """
 
   use YtmWeb, :live_view
 
   alias Ytm.NDEF
-  alias Ytm.PN532
+  alias Ytm.PN532.Server, as: PN532Server
 
   @bus_names ["spidev0.0", "spidev0.1"]
 
@@ -42,22 +42,6 @@ defmodule YtmWeb.NFCLive do
               </div>
 
               <div class="card-actions mt-2">
-                <button
-                  :if={bus.status != :open}
-                  phx-click="connect"
-                  phx-value-bus={bus_name}
-                  class="btn btn-sm btn-primary"
-                >
-                  <.icon name="hero-bolt" class="size-4" /> Connect
-                </button>
-                <button
-                  :if={bus.status == :open}
-                  phx-click="disconnect"
-                  phx-value-bus={bus_name}
-                  class="btn btn-sm btn-outline"
-                >
-                  <.icon name="hero-bolt-slash" class="size-4" /> Disconnect
-                </button>
                 <button
                   :if={bus.status == :open}
                   phx-click="scan"
@@ -164,108 +148,60 @@ defmodule YtmWeb.NFCLive do
   end
 
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, buses: Map.new(@bus_names, &{&1, closed_bus()}), bus_names: @bus_names)}
-  end
-
-  def handle_event("connect", %{"bus" => bus_name}, socket) do
-    {:noreply, update_bus(socket, bus_name, fn bus -> connect_bus(bus_name, bus) end)}
-  end
-
-  def handle_event("disconnect", %{"bus" => bus_name}, socket) do
-    {:noreply, update_bus(socket, bus_name, &disconnect_bus/1)}
+    buses = Map.new(@bus_names, &{&1, bus_from_status(PN532Server.status(&1))})
+    {:ok, assign(socket, buses: buses, bus_names: @bus_names)}
   end
 
   def handle_event("scan", %{"bus" => bus_name}, socket) do
-    {:noreply, update_bus(socket, bus_name, &scan_bus/1)}
+    {:noreply, update_bus(socket, bus_name, &scan_bus(bus_name, &1))}
   end
 
   def handle_event("write", %{"bus" => bus_name, "text" => text}, socket) do
-    {:noreply, update_bus(socket, bus_name, &write_bus(&1, text))}
+    {:noreply, update_bus(socket, bus_name, &write_bus(bus_name, &1, text))}
   end
 
   def handle_event("myelin:" <> _event, _params, socket) do
     {:noreply, socket}
   end
 
-  def terminate(_reason, socket) do
-    if buses = socket.assigns[:buses] do
-      Enum.each(buses, fn {_bus_name, bus} -> if bus.pn532, do: PN532.close(bus.pn532) end)
-    end
-
-    :ok
+  defp bus_from_status({:connected, firmware_version, _error}) do
+    %{status: :open, error: nil, firmware_version: firmware_version, scan: nil, write_result: nil}
   end
 
-  defp closed_bus,
-    do: %{
-      status: :closed,
-      pn532: nil,
-      error: nil,
-      firmware_version: nil,
-      scan: nil,
-      write_result: nil
-    }
+  defp bus_from_status({:disconnected, _firmware_version, nil}) do
+    %{status: :closed, error: nil, firmware_version: nil, scan: nil, write_result: nil}
+  end
+
+  defp bus_from_status({:disconnected, _firmware_version, reason}) do
+    %{status: :error, error: reason, firmware_version: nil, scan: nil, write_result: nil}
+  end
+
+  defp bus_from_status({:error, :not_started}) do
+    %{status: :closed, error: nil, firmware_version: nil, scan: nil, write_result: nil}
+  end
 
   defp update_bus(socket, bus_name, fun) do
     assign(socket, :buses, Map.update!(socket.assigns.buses, bus_name, fun))
   end
 
-  defp connect_bus(_bus_name, %{status: :open} = bus), do: bus
-
-  defp connect_bus(bus_name, bus) do
-    if bus.pn532, do: PN532.close(bus.pn532)
-
-    case PN532.open(bus_name) do
-      {:ok, pn532} ->
-        firmware_version =
-          case PN532.firmware_version(pn532) do
-            {:ok, version} -> version
-            {:error, _reason} -> nil
-          end
-
-        %{
-          status: :open,
-          pn532: pn532,
-          error: nil,
-          firmware_version: firmware_version,
-          scan: nil,
-          write_result: nil
-        }
-
-      {:error, reason} ->
-        %{
-          status: :error,
-          pn532: nil,
-          error: reason,
-          firmware_version: nil,
-          scan: nil,
-          write_result: nil
-        }
-    end
-  end
-
-  defp disconnect_bus(bus) do
-    if bus.pn532, do: PN532.close(bus.pn532)
-    closed_bus()
-  end
-
-  defp scan_bus(%{status: :open, pn532: pn532} = bus) do
+  defp scan_bus(bus_name, %{status: :open} = bus) do
     scan =
-      case PN532.read_passive_target(pn532) do
-        {:ok, {uid, sak}} -> {:ok, uid, sak, PN532.read_ndef(pn532, uid, sak)}
+      case PN532Server.scan(bus_name) do
+        {:ok, {uid, sak, ndef}} -> {:ok, uid, sak, ndef}
         {:error, reason} -> {:error, reason}
       end
 
     %{bus | scan: scan, write_result: nil}
   end
 
-  defp scan_bus(bus), do: bus
+  defp scan_bus(_bus_name, bus), do: bus
 
-  defp write_bus(%{status: :open, pn532: pn532, scan: {:ok, uid, sak, _ndef}} = bus, text) do
+  defp write_bus(bus_name, %{status: :open, scan: {:ok, uid, sak, _ndef}} = bus, text) do
     message = text |> NDEF.encode_text() |> List.wrap() |> NDEF.encode_records()
-    %{bus | write_result: PN532.write_ndef(pn532, uid, sak, message)}
+    %{bus | write_result: PN532Server.write_ndef(bus_name, uid, sak, message)}
   end
 
-  defp write_bus(bus, _text), do: bus
+  defp write_bus(_bus_name, bus, _text), do: bus
 
   defp describe_ndef({:error, reason}), do: ["Failed to read NDEF message: #{inspect(reason)}"]
 
