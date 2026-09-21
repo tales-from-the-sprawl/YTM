@@ -66,6 +66,8 @@ defmodule Ytm.PN532 do
           | :no_ndef_sectors
           | {:sector_authentication_failed, byte()}
 
+  @type write_error :: {:sector_write_failed, byte()} | :write_failed | :message_too_large
+
   @doc """
   Opens the SPI bus, resets and wakes the PN532, puts it in normal (SAM)
   mode, and confirms it's alive by reading its firmware version.
@@ -298,6 +300,78 @@ defmodule Ytm.PN532 do
     end
   end
 
+  @doc """
+  Writes an NDEF message (as accepted by `NDEF.encode_records/1`/returned by
+  `NDEF.decode/1`) to a detected tag, dispatching on its SAK exactly like
+  `read_ndef/3`.
+
+  A failed write may leave the tag in a partially-written state; retry the
+  whole write on failure rather than assuming partial success is safe to
+  build on.
+  """
+  @spec write_ndef(t(), binary(), byte(), binary()) ::
+          :ok | {:error, error() | mad_error() | write_error()}
+  def write_ndef(pn532, uid, sak, message) do
+    if mifare_classic?(sak) do
+      mifare_classic_write_ndef(pn532, uid, message)
+    else
+      ntag2xx_write_ndef(pn532, message)
+    end
+  end
+
+  @doc """
+  Writes an NDEF message to an NTAG21x tag's user memory starting at page 4,
+  padding the TLV-wrapped message to a 4-byte page boundary with trailing
+  `0x00` bytes after the terminator TLV. Writes stop and report the error as
+  soon as the tag rejects a page (e.g. because the message ran past the end
+  of its memory).
+  """
+  @spec ntag2xx_write_ndef(t(), binary()) :: :ok | {:error, error() | write_error()}
+  def ntag2xx_write_ndef(pn532, message) do
+    message
+    |> NDEF.encode()
+    |> chunk_padded(4)
+    |> write_pages(pn532, @ndef_start_page)
+  end
+
+  @doc """
+  Writes an NDEF message to a Mifare Classic 1K tag, via the same MAD-tagged
+  NDEF sectors `mifare_classic_read_ndef/2` reads from. Fails with
+  `:message_too_large` without writing anything if the message doesn't fit
+  in the tag's NDEF sectors' combined capacity (3 data blocks of 16 bytes
+  each per sector).
+
+  Only the single-MAD, 16-sector Mifare Classic 1K layout is supported.
+  """
+  @spec mifare_classic_write_ndef(t(), binary(), binary()) ::
+          :ok | {:error, error() | mad_error() | write_error()}
+  def mifare_classic_write_ndef(pn532, uid, message) do
+    chunks = message |> NDEF.encode() |> chunk_padded(16)
+
+    with {:ok, sectors} <- read_mad_ndef_sectors(pn532, uid) do
+      capacity = length(sectors) * (@classic_blocks_per_sector - 1)
+
+      if length(chunks) > capacity do
+        {:error, :message_too_large}
+      else
+        write_ndef_sectors(pn532, uid, Enum.sort(sectors), chunks)
+      end
+    end
+  end
+
+  @doc """
+  Splits `data` into `chunk_size`-byte chunks, zero-padding it to a multiple
+  of `chunk_size` first if needed. Used to lay a TLV-wrapped NDEF message out
+  across a tag's fixed-size pages/blocks.
+  """
+  @spec chunk_padded(binary(), pos_integer()) :: [binary()]
+  def chunk_padded(data, chunk_size) do
+    padding_size = rem(chunk_size - rem(byte_size(data), chunk_size), chunk_size)
+    padded = data <> :binary.copy(<<0>>, padding_size)
+
+    for <<chunk::binary-size(^chunk_size) <- padded>>, do: chunk
+  end
+
   @spec mifare_classic?(byte()) :: boolean()
   defp mifare_classic?(sak), do: Bitwise.band(sak, @mifare_classic_sak_mask) != 0
 
@@ -375,6 +449,55 @@ defmodule Ytm.PN532 do
       {:ok, data} -> read_pages(pn532, page + 1, remaining - 1, acc <> data)
       {:error, {:mifare_status, _status}} -> {:ok, acc}
       {:error, _reason} = error -> error
+    end
+  end
+
+  @spec write_pages([binary()], t(), byte()) :: :ok | {:error, error() | write_error()}
+  defp write_pages([], _pn532, _page), do: :ok
+
+  defp write_pages([chunk | rest], pn532, page) do
+    case ntag2xx_write_block(pn532, page, chunk) do
+      {:ok, true} -> write_pages(rest, pn532, page + 1)
+      {:ok, false} -> {:error, :write_failed}
+      error -> error
+    end
+  end
+
+  @spec write_ndef_sectors(t(), binary(), [byte()], [binary()]) ::
+          :ok | {:error, error() | write_error()}
+  defp write_ndef_sectors(pn532, uid, sectors, chunks) do
+    chunks
+    |> Enum.chunk_every(@classic_blocks_per_sector - 1)
+    |> Enum.zip(sectors)
+    |> Enum.reduce_while(:ok, fn {sector_chunks, sector}, :ok ->
+      case write_ndef_sector(pn532, uid, sector, sector_chunks) do
+        :ok -> {:cont, :ok}
+        error -> {:halt, error}
+      end
+    end)
+  end
+
+  @spec write_ndef_sector(t(), binary(), byte(), [binary()]) ::
+          :ok | {:error, error() | {:sector_authentication_failed, byte()} | write_error()}
+  defp write_ndef_sector(pn532, uid, sector, chunks) do
+    first_block = sector * @classic_blocks_per_sector
+
+    case mifare_classic_authenticate_block(pn532, uid, first_block, 0, @ndef_key_a) do
+      {:ok, true} -> write_sector_data_blocks(pn532, first_block, chunks, sector)
+      {:ok, false} -> {:error, {:sector_authentication_failed, sector}}
+      error -> error
+    end
+  end
+
+  @spec write_sector_data_blocks(t(), byte(), [binary()], byte()) ::
+          :ok | {:error, error() | write_error()}
+  defp write_sector_data_blocks(_pn532, _block, [], _sector), do: :ok
+
+  defp write_sector_data_blocks(pn532, block, [chunk | rest], sector) do
+    case mifare_classic_write_block(pn532, block, chunk) do
+      {:ok, true} -> write_sector_data_blocks(pn532, block + 1, rest, sector)
+      {:ok, false} -> {:error, {:sector_write_failed, sector}}
+      error -> error
     end
   end
 

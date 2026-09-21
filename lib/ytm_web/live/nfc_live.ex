@@ -75,6 +75,28 @@ defmodule YtmWeb.NFCLive do
               <div :if={bus.scan} class="mt-4 bg-base-200 rounded-lg p-3 text-sm space-y-2">
                 <.scan_result scan={bus.scan} />
               </div>
+
+              <form
+                :if={match?({:ok, _uid, _sak, _ndef}, bus.scan)}
+                phx-submit="write"
+                phx-value-bus={bus_name}
+                class="mt-4 flex gap-2"
+              >
+                <input
+                  type="text"
+                  name="text"
+                  placeholder="Text to write"
+                  class="input input-sm input-bordered flex-1"
+                  required
+                />
+                <button type="submit" class="btn btn-sm btn-accent">
+                  <.icon name="hero-pencil-square" class="size-4" /> Write
+                </button>
+              </form>
+
+              <div :if={bus.write_result} class="mt-2 text-sm">
+                <.write_result result={bus.write_result} />
+              </div>
             </div>
           </div>
         </div>
@@ -127,6 +149,20 @@ defmodule YtmWeb.NFCLive do
     """
   end
 
+  defp write_result(%{result: :ok} = assigns) do
+    ~H"""
+    <p class="text-success font-mono text-xs">Write succeeded.</p>
+    """
+  end
+
+  defp write_result(%{result: {:error, reason}} = assigns) do
+    assigns = assign(assigns, :reason, reason)
+
+    ~H"""
+    <p class="text-error font-mono text-xs">Write failed: {inspect(@reason)}</p>
+    """
+  end
+
   def mount(_params, _session, socket) do
     {:ok, assign(socket, buses: Map.new(@bus_names, &{&1, closed_bus()}), bus_names: @bus_names)}
   end
@@ -143,6 +179,10 @@ defmodule YtmWeb.NFCLive do
     {:noreply, update_bus(socket, bus_name, &scan_bus/1)}
   end
 
+  def handle_event("write", %{"bus" => bus_name, "text" => text}, socket) do
+    {:noreply, update_bus(socket, bus_name, &write_bus(&1, text))}
+  end
+
   def handle_event("myelin:" <> _event, _params, socket) do
     {:noreply, socket}
   end
@@ -156,7 +196,14 @@ defmodule YtmWeb.NFCLive do
   end
 
   defp closed_bus,
-    do: %{status: :closed, pn532: nil, error: nil, firmware_version: nil, scan: nil}
+    do: %{
+      status: :closed,
+      pn532: nil,
+      error: nil,
+      firmware_version: nil,
+      scan: nil,
+      write_result: nil
+    }
 
   defp update_bus(socket, bus_name, fun) do
     assign(socket, :buses, Map.update!(socket.assigns.buses, bus_name, fun))
@@ -175,10 +222,24 @@ defmodule YtmWeb.NFCLive do
             {:error, _reason} -> nil
           end
 
-        %{status: :open, pn532: pn532, error: nil, firmware_version: firmware_version, scan: nil}
+        %{
+          status: :open,
+          pn532: pn532,
+          error: nil,
+          firmware_version: firmware_version,
+          scan: nil,
+          write_result: nil
+        }
 
       {:error, reason} ->
-        %{status: :error, pn532: nil, error: reason, firmware_version: nil, scan: nil}
+        %{
+          status: :error,
+          pn532: nil,
+          error: reason,
+          firmware_version: nil,
+          scan: nil,
+          write_result: nil
+        }
     end
   end
 
@@ -194,10 +255,17 @@ defmodule YtmWeb.NFCLive do
         {:error, reason} -> {:error, reason}
       end
 
-    %{bus | scan: scan}
+    %{bus | scan: scan, write_result: nil}
   end
 
   defp scan_bus(bus), do: bus
+
+  defp write_bus(%{status: :open, pn532: pn532, scan: {:ok, uid, sak, _ndef}} = bus, text) do
+    message = text |> NDEF.encode_text() |> List.wrap() |> NDEF.encode_records()
+    %{bus | write_result: PN532.write_ndef(pn532, uid, sak, message)}
+  end
+
+  defp write_bus(bus, _text), do: bus
 
   defp describe_ndef({:error, reason}), do: ["Failed to read NDEF message: #{inspect(reason)}"]
 

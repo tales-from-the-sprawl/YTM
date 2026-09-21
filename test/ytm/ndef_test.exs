@@ -149,4 +149,101 @@ defmodule Ytm.NDEFTest do
       assert NDEF.decode_uri(record) == {:error, :not_a_uri_record}
     end
   end
+
+  describe "encode/1" do
+    test "round-trips a short message" do
+      message = <<0xD1, 0x01, 0x03, "T", 0x02, "en">>
+
+      assert NDEF.decode(NDEF.encode(message)) == {:ok, message}
+    end
+
+    test "round-trips a message right at the single-byte length boundary" do
+      message = :binary.copy(<<0xAA>>, 254)
+
+      assert NDEF.decode(NDEF.encode(message)) == {:ok, message}
+    end
+
+    test "round-trips a long message via the three-byte-length TLV form" do
+      message = :binary.copy(<<0xBB>>, 300)
+
+      assert NDEF.decode(NDEF.encode(message)) == {:ok, message}
+    end
+  end
+
+  describe "encode_records/1" do
+    test "round-trips a single short record with no id" do
+      records = [%Record{tnf: :well_known, type: "T", id: <<>>, payload: <<0x02, "en", "Hello">>}]
+
+      assert NDEF.decode_records(NDEF.encode_records(records)) == {:ok, records}
+    end
+
+    test "round-trips a record with an id field" do
+      records = [%Record{tnf: :external, type: "X", id: "i", payload: "Z"}]
+
+      assert NDEF.decode_records(NDEF.encode_records(records)) == {:ok, records}
+    end
+
+    test "round-trips a long record (payload >= 256 bytes)" do
+      payload = :binary.copy(<<0xBB>>, 300)
+      records = [%Record{tnf: :mime_media, type: "M", id: <<>>, payload: payload}]
+
+      assert NDEF.decode_records(NDEF.encode_records(records)) == {:ok, records}
+    end
+
+    test "round-trips multiple records in one message" do
+      records = [
+        %Record{tnf: :well_known, type: "T", id: <<>>, payload: <<0x02, "en", "Hello">>},
+        %Record{tnf: :well_known, type: "U", id: <<>>, payload: <<0x04, "example.com">>},
+        %Record{tnf: :external, type: "X", id: "i", payload: "Z"}
+      ]
+
+      assert NDEF.decode_records(NDEF.encode_records(records)) == {:ok, records}
+    end
+  end
+
+  describe "encode_text/2" do
+    test "round-trips through decode_text/1" do
+      record = NDEF.encode_text("Hello", "en")
+
+      assert NDEF.decode_text(record) == {:ok, {"en", "Hello"}}
+    end
+
+    test "defaults to English" do
+      record = NDEF.encode_text("Hej")
+
+      assert NDEF.decode_text(record) == {:ok, {"en", "Hej"}}
+    end
+  end
+
+  describe "encode_uri/1" do
+    test "round-trips a URI matched by the longest prefix" do
+      record = NDEF.encode_uri("https://www.example.com")
+
+      assert record.payload == <<0x02, "example.com">>
+      assert NDEF.decode_uri(record) == {:ok, "https://www.example.com"}
+    end
+
+    test "prefers the longer of two matching prefixes" do
+      record = NDEF.encode_uri("https://example.com")
+
+      assert record.payload == <<0x04, "example.com">>
+    end
+
+    test "falls back to the unabbreviated prefix code when nothing matches" do
+      record = NDEF.encode_uri("urn:foo:bar")
+
+      assert NDEF.decode_uri(record) == {:ok, "urn:foo:bar"}
+    end
+  end
+
+  test "a full message with multiple well-known records round-trips end to end" do
+    records = [NDEF.encode_text("Hello"), NDEF.encode_uri("https://example.com")]
+
+    tag_data = NDEF.encode(NDEF.encode_records(records))
+
+    assert {:ok, message} = NDEF.decode(tag_data)
+    assert {:ok, [text_record, uri_record]} = NDEF.decode_records(message)
+    assert NDEF.decode_text(text_record) == {:ok, {"en", "Hello"}}
+    assert NDEF.decode_uri(uri_record) == {:ok, "https://example.com"}
+  end
 end
