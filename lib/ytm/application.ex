@@ -12,7 +12,8 @@ defmodule Ytm.Application do
     children =
       [
         # Children for all targets
-        Ytm.PN532.Supervisor
+        Ytm.PN532.Supervisor,
+        Ytm.CardButton.Supervisor
       ] ++ phoenix_children() ++ children()
 
     # See https://elixir.hexdocs.pm/Supervisor.html

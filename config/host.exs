@@ -24,3 +24,6 @@ config :nerves_uevent, manage_udev: false
 
 # No SPI hardware on host; Ytm.PN532.Supervisor starts with no bus servers.
 config :ytm, Ytm.PN532.Supervisor, buses: []
+
+# No GPIO buttons wired on host; Ytm.CardButton.Supervisor starts with no button servers.
+config :ytm, Ytm.CardButton.Supervisor, buttons: []

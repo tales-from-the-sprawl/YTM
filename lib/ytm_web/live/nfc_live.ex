@@ -10,10 +10,13 @@ defmodule YtmWeb.NFCLive do
 
   use YtmWeb, :live_view
 
+  alias Ytm.CardButton.Server, as: CardButtonServer
   alias Ytm.NDEF
   alias Ytm.PN532.Server, as: PN532Server
 
   @bus_names ["spidev0.0", "spidev0.1"]
+  @auto_scan_interval_ms 500
+  @auto_scan_max_attempts 8
 
   def render(assigns) do
     ~H"""
@@ -148,6 +151,10 @@ defmodule YtmWeb.NFCLive do
   end
 
   def mount(_params, _session, socket) do
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Ytm.PubSub, CardButtonServer.topic())
+    end
+
     buses = Map.new(@bus_names, &{&1, bus_from_status(PN532Server.status(&1))})
     {:ok, assign(socket, buses: buses, bus_names: @bus_names)}
   end
@@ -162,6 +169,35 @@ defmodule YtmWeb.NFCLive do
 
   def handle_event("myelin:" <> _event, _params, socket) do
     {:noreply, socket}
+  end
+
+  def handle_info({:card_button_pressed, bus_name}, socket) do
+    {:noreply, auto_scan(socket, bus_name, @auto_scan_max_attempts)}
+  end
+
+  def handle_info({:auto_scan, bus_name, attempts_left}, socket) do
+    {:noreply, auto_scan(socket, bus_name, attempts_left)}
+  end
+
+  defp auto_scan(socket, bus_name, attempts_left) do
+    socket = update_bus(socket, bus_name, &scan_bus(bus_name, &1))
+
+    case {socket.assigns.buses[bus_name].scan, attempts_left} do
+      {{:ok, _uid, _sak, _ndef}, _} ->
+        socket
+
+      {_scan, attempts_left} when attempts_left > 1 ->
+        Process.send_after(
+          self(),
+          {:auto_scan, bus_name, attempts_left - 1},
+          @auto_scan_interval_ms
+        )
+
+        socket
+
+      _ ->
+        socket
+    end
   end
 
   defp bus_from_status({:connected, firmware_version, _error}) do

@@ -11,3 +11,6 @@ config :vintage_net,
 
 # PN532 NFC readers on SPI0, one per chip-select.
 config :ytm, Ytm.PN532.Supervisor, buses: ["spidev0.0", "spidev0.1"]
+
+# Pull-up buttons that trigger when a card is inserted into the matching reader.
+config :ytm, Ytm.CardButton.Supervisor, buttons: [{4, "spidev0.0"}, {17, "spidev0.1"}]
