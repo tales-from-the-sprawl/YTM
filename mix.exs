@@ -46,7 +46,21 @@ defmodule Ytm.MixProject do
   defp elixirc_paths(_), do: ["lib"]
 
   def aliases() do
-    [] ++ phoenix_aliases()
+    [generate_fwup_conf: &generate_fwup_conf/1] ++ phoenix_aliases()
+  end
+
+  # Renders config/fwup.conf.eex (our override of kiosk_system_rpi4's
+  # fwup.conf.eex, see the comment at the top of that file) to config/fwup.conf,
+  # the plain-text file that `fwup` itself reads. Run this after editing
+  # config/fwup.conf.eex.
+  defp generate_fwup_conf(_args) do
+    template_path = Path.join(["config", "fwup.conf.eex"])
+    output_path = Path.join(["config", "fwup.conf"])
+
+    Mix.shell().info("Generating #{output_path}")
+
+    content = EEx.eval_file(template_path)
+    File.write!(output_path, content)
   end
 
   # Run "mix help deps" to learn about dependencies.
