@@ -13,6 +13,10 @@ defmodule Ytm.BotClient do
     Req.get(new(), url: "/api/balance/:handle", path_params: [handle: handle]).body
   end
 
+  @doc """
+    Transfer money to/from a handles. Handles can be a username or a sincard id like sin:1234.  
+    To create/destroy money set the other party as nil.
+  """
   def transfer(sender, receiver, amount, opts \\ []) do
     allow_partial = Keyword.get(opts, :partial, false)
 
