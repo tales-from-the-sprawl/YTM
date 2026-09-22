@@ -17,7 +17,7 @@ defmodule YtmWeb.Router do
   scope "/", YtmWeb do
     pipe_through :browser
 
-    live "/", HomeLive
+    live "/", TransferLive
     live "/dashboard", DashboardLive
     live "/gpio", GPIOLive
     live "/nfc", NFCLive
