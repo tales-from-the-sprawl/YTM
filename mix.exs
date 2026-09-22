@@ -82,6 +82,7 @@ defmodule Ytm.MixProject do
       {:circuits_gpio, "~> 2.1"},
       {:circuits_spi, "~> 2.1"},
       {:dbus, "~> 0.8"},
+      {:req, "~> 0.7"},
 
       # Allow Nerves.Runtime on host to support development, testing and CI.
       # See config/host.exs for usage.
