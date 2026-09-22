@@ -5,6 +5,10 @@
 # this project.
 import Config
 
+config :ytm,
+  base_url: "https://talesbot.databladet.se",
+  auth: {:basic, "tales:supersecret"}
+
 # Enable the Nerves integration with Mix
 Application.start(:nerves_bootstrap)
 
