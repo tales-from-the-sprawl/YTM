@@ -175,6 +175,10 @@ defmodule YtmWeb.NFCLive do
     {:noreply, auto_scan(socket, bus_name, @auto_scan_max_attempts)}
   end
 
+  def handle_info({:card_button_released, _bus_name}, socket) do
+    {:noreply, socket}
+  end
+
   def handle_info({:auto_scan, bus_name, attempts_left}, socket) do
     {:noreply, auto_scan(socket, bus_name, attempts_left)}
   end

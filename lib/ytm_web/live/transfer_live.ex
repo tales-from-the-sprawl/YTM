@@ -55,13 +55,18 @@ defmodule YtmWeb.TransferLive do
   end
 
   def handle_info({:card_button_pressed, bus_name}, socket) do
-    side =
-      case bus_name do
-        "spidev0.0" -> :left
-        "spidev0.1" -> :right
-      end
+    {:noreply, assign(socket, bus_side(bus_name), true)}
+  end
 
-    {:noreply, assign(socket, side, true)}
+  def handle_info({:card_button_released, bus_name}, socket) do
+    {:noreply, assign(socket, bus_side(bus_name), false)}
+  end
+
+  defp bus_side(bus_name) do
+    case bus_name do
+      "spidev0.0" -> :right
+      "spidev0.1" -> :left
+    end
   end
 
   def handle_event("myelin:" <> _event, _params, socket) do

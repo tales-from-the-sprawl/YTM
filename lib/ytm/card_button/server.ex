@@ -1,9 +1,10 @@
 defmodule Ytm.CardButton.Server do
   @moduledoc """
   Watches one GPIO wired to a pull-up push button that closes to ground when
-  a card is inserted into the NFC reader on `bus_name`, and broadcasts a
-  `{:card_button_pressed, bus_name}` message on `#{inspect(__MODULE__)}.topic/0`
-  over `Ytm.PubSub` for each falling edge, debounced.
+  a card is inserted into the NFC reader on `bus_name`, and broadcasts, over
+  `Ytm.PubSub` on `#{inspect(__MODULE__)}.topic/0`, a `{:card_button_pressed,
+  bus_name}` message for each falling edge and a `{:card_button_released,
+  bus_name}` message for each rising edge, both debounced.
 
   Reconnection is always-on and has no manual override, mirroring
   `Ytm.PN532.Server`: a GPIO that fails to open (or a bus error) is retried on
@@ -28,7 +29,8 @@ defmodule Ytm.CardButton.Server do
           gpio: GPIO.Handle.t() | nil,
           status: status(),
           error: term(),
-          last_pressed_at: integer() | nil
+          last_pressed_at: integer() | nil,
+          last_released_at: integer() | nil
         }
 
   @enforce_keys [:pin, :bus_name]
@@ -37,14 +39,18 @@ defmodule Ytm.CardButton.Server do
             gpio: nil,
             status: :disconnected,
             error: nil,
-            last_pressed_at: nil
+            last_pressed_at: nil,
+            last_released_at: nil
 
   @spec start_link({non_neg_integer(), String.t()}) :: GenServer.on_start()
   def start_link({pin, bus_name}) do
     GenServer.start_link(__MODULE__, {pin, bus_name})
   end
 
-  @doc "PubSub topic broadcasting `{:card_button_pressed, bus_name}` for every configured button."
+  @doc """
+  PubSub topic broadcasting `{:card_button_pressed, bus_name}` and
+  `{:card_button_released, bus_name}` for every configured button.
+  """
   @spec topic() :: String.t()
   def topic(), do: @topic
 
@@ -65,6 +71,13 @@ defmodule Ytm.CardButton.Server do
         %__MODULE__{bus_name: bus_name} = state
       ) do
     {:noreply, maybe_broadcast_press(state)}
+  end
+
+  def handle_info(
+        {:circuits_gpio, %{ref: bus_name, value: 1}},
+        %__MODULE__{bus_name: bus_name} = state
+      ) do
+    {:noreply, maybe_broadcast_release(state)}
   end
 
   def handle_info({:circuits_gpio, %{}}, state), do: {:noreply, state}
@@ -93,7 +106,7 @@ defmodule Ytm.CardButton.Server do
 
   defp open_and_subscribe(pin, bus_name) do
     with {:ok, gpio} <- GPIO.open(pin, :input, pull_mode: :pullup),
-         {:ok, _ref} <- GPIO.subscribe(gpio, trigger: :falling, tag: bus_name) do
+         {:ok, _ref} <- GPIO.subscribe(gpio, trigger: :both, tag: bus_name) do
       {:ok, gpio}
     else
       {:error, reason} = error ->
@@ -109,6 +122,18 @@ defmodule Ytm.CardButton.Server do
       Logger.info("pressed")
       Phoenix.PubSub.broadcast(Ytm.PubSub, @topic, {:card_button_pressed, state.bus_name})
       %{state | last_pressed_at: now}
+    else
+      state
+    end
+  end
+
+  defp maybe_broadcast_release(state) do
+    now = System.monotonic_time(:millisecond)
+
+    if state.last_released_at == nil or now - state.last_released_at >= @debounce_ms do
+      Logger.info("released")
+      Phoenix.PubSub.broadcast(Ytm.PubSub, @topic, {:card_button_released, state.bus_name})
+      %{state | last_released_at: now}
     else
       state
     end
