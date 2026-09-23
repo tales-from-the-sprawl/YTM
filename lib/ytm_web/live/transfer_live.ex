@@ -1,6 +1,12 @@
 defmodule YtmWeb.TransferLive do
   use YtmWeb, :live_view
   alias Ytm.CardButton.Server, as: CardButtonServer
+  alias Ytm.Finance
+  alias Ytm.PN532.Server, as: PN532Server
+
+  @bus_names ["spidev0.0", "spidev0.1"]
+  @read_attempts 8
+  @read_retry_interval_ms 500
 
   def render(assigns) do
     ~H"""
@@ -48,12 +54,36 @@ defmodule YtmWeb.TransferLive do
         </div>
       </div>
 
-      <.cred_stick class="left-32" active={@left} glow={false} />
+      <.card_slot class="left-32" active={@left} card={@left_card} default={:unknown} />
 
-      <.sin_card class="right-32" active={@right} glow={false} />
+      <.card_slot class="right-32" active={@right} card={@right_card} default={:unknown} />
     </main>
     """
   end
+
+  attr :class, :string, default: nil
+  attr :active, :boolean, default: false
+
+  attr :card, :any,
+    default: nil,
+    doc: "the parsed `Ytm.Finance.card/0`, or `nil` if unread/unrecognised"
+
+  attr :default, :atom, values: [:cred, :sin], doc: "shape to show until a card has been read"
+
+  # Shows the slot's card as whichever type was actually read from it, falling
+  # back to the slot's default shape while empty, still being read, or unrecognised.
+  defp card_slot(assigns) do
+    assigns = assign(assigns, :type, card_type(assigns.card, assigns.default))
+
+    ~H"""
+    <.prompt :if={@type == :unknown} class={@class} active={@active} />
+    <.cred_stick :if={@type == :cred} class={@class} active={@active} />
+    <.sin_card :if={@type == :sin} class={@class} active={@active} />
+    """
+  end
+
+  defp card_type({type, _value}, _default), do: type
+  defp card_type(_card, default), do: default
 
   attr :class, :string, default: nil
   attr :glow, :boolean, default: false
@@ -95,6 +125,27 @@ defmodule YtmWeb.TransferLive do
     """
   end
 
+  attr :class, :string, default: nil
+  attr :active, :boolean, default: false
+
+  defp prompt(assigns) do
+    ~H"""
+    <div class={["absolute bottom-4 pb-0", @class]}>
+      <div :if={not @active} class="flex flex-col gap-4 items-center">
+        <span>Insert card</span>
+        <.icon
+          name="hero-chevron-double-down"
+          class="size-14 animate-[bounce_1.5s_infinite]"
+        />
+      </div>
+      <div :if={@active} class="flex flex-col gap-4 items-center text-warning">
+        <span>Unknown card</span>
+        <.icon name="hero-exclamation-triangle" class="size-14" />
+      </div>
+    </div>
+    """
+  end
+
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Ytm.PubSub, CardButtonServer.topic())
@@ -107,20 +158,43 @@ defmodule YtmWeb.TransferLive do
       |> assign(
         left: CardButtonServer.pressed?("spidev0.1"),
         right: CardButtonServer.pressed?("spidev0.0"),
+        left_card: nil,
+        right_card: nil,
         success: false,
         error: false,
         amount: ""
       )
 
+    socket =
+      if connected?(socket) do
+        Enum.reduce(@bus_names, socket, fn bus_name, socket ->
+          if socket.assigns[bus_side(bus_name)], do: start_read(socket, bus_name), else: socket
+        end)
+      else
+        socket
+      end
+
     {:ok, socket}
   end
 
   def handle_info({:card_button_pressed, bus_name}, socket) do
-    {:noreply, assign(socket, bus_side(bus_name), true)}
+    socket =
+      socket
+      |> assign(bus_side(bus_name), true)
+      |> start_read(bus_name)
+
+    {:noreply, socket}
   end
 
   def handle_info({:card_button_released, bus_name}, socket) do
-    {:noreply, assign(socket, bus_side(bus_name), false)}
+    side = bus_side(bus_name)
+
+    socket =
+      socket
+      |> cancel_async({:read_card, bus_name})
+      |> assign([{side, false}, {card_assign(side), nil}])
+
+    {:noreply, socket}
   end
 
   def handle_info({:keypad, key}, socket) do
@@ -132,6 +206,41 @@ defmodule YtmWeb.TransferLive do
   defp keypad_input(amount, "*"), do: String.slice(amount, 0..-2//1)
   defp keypad_input(_amount, "C"), do: ""
   defp keypad_input(amount, _key), do: amount
+
+  def handle_async({:read_card, bus_name}, {:ok, card}, socket) do
+    {:noreply, assign(socket, card_assign(bus_side(bus_name)), card)}
+  end
+
+  def handle_async({:read_card, _bus_name}, {:exit, _reason}, socket) do
+    {:noreply, socket}
+  end
+
+  # Reads the card off the bus in the background so a slow scan doesn't stall
+  # keypad input. Restarting an in-flight read replaces it.
+  defp start_read(socket, bus_name) do
+    socket
+    |> assign(card_assign(bus_side(bus_name)), nil)
+    |> start_async({:read_card, bus_name}, fn -> read_card(bus_name, @read_attempts) end)
+  end
+
+  # The button closes slightly before the card is seated over the antenna, so
+  # retry a few times before giving up and treating the card as unrecognised.
+  defp read_card(bus_name, attempts_left) do
+    with {:ok, {_uid, _sak, ndef}} <- PN532Server.scan(bus_name),
+         {:ok, card} <- Finance.decode_card(ndef) do
+      card
+    else
+      _error when attempts_left > 1 ->
+        Process.sleep(@read_retry_interval_ms)
+        read_card(bus_name, attempts_left - 1)
+
+      _error ->
+        nil
+    end
+  end
+
+  defp card_assign(:left), do: :left_card
+  defp card_assign(:right), do: :right_card
 
   defp bus_side(bus_name) do
     case bus_name do
