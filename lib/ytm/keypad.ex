@@ -5,11 +5,9 @@ defmodule Ytm.Keypad do
 
   Rows are opened as inputs with an internal pull-up and interrupts on the
   falling edge; columns are opened as outputs, driven high one at a time to
-  scan for which row went low. On a debounced keypress, `{:keypad, key}` is
-  sent to the owning process (the caller of `start_link/1`, by default).
-
-  `start_link/1` accepts an `:owner` option: the process to send
-  `{:keypad, key}` messages to. Defaults to the caller of `start_link/1`.
+  scan for which row went low. On a debounced keypress, broadcasts, over
+  `Ytm.PubSub` on `#{inspect(__MODULE__)}.topic/0`, a `{:keypad, key}`
+  message.
   """
 
   use GenServer
@@ -19,6 +17,7 @@ defmodule Ytm.Keypad do
   @row_pins [6, 13, 19, 26]
   @col_pins [12, 16, 20, 21]
   @debounce_interval_ms 100
+  @topic "keypad"
 
   @matrix [
     ["1", "2", "3", "A"],
@@ -27,20 +26,20 @@ defmodule Ytm.Keypad do
     ["*", "0", "#", "D"]
   ]
 
-  defstruct [:owner, row_pins: [], col_pins: [], last_press_at: 0]
+  defstruct row_pins: [], col_pins: [], last_press_at: 0
 
-  @type start_opt :: {:owner, pid()}
+  @doc "PubSub topic broadcasting `{:keypad, key}` for every keypress."
+  @spec topic() :: String.t()
+  def topic(), do: @topic
 
-  @spec start_link([start_opt() | GenServer.option()]) :: GenServer.on_start()
-  def start_link(opts) do
-    {genserver_opts, keypad_opts} = Keyword.split(opts, [:name, :timeout, :debug, :spawn_opt])
-    GenServer.start_link(__MODULE__, {self(), keypad_opts}, genserver_opts)
+  @spec start_link([GenServer.option()]) :: GenServer.on_start()
+  def start_link(opts \\ []) do
+    GenServer.start_link(__MODULE__, [], opts)
   end
 
   @impl GenServer
-  def init({caller, opts}) do
+  def init([]) do
     state = %__MODULE__{
-      owner: Keyword.get(opts, :owner, caller),
       row_pins: Enum.map(@row_pins, &open_row_pin!/1),
       col_pins: Enum.map(@col_pins, &open_col_pin!/1)
     }
@@ -51,7 +50,7 @@ defmodule Ytm.Keypad do
   @spec open_row_pin!(pos_integer()) :: {pos_integer(), GPIO.Handle.t()}
   defp open_row_pin!(pin_num) do
     {:ok, pin} = GPIO.open(pin_num, :input, pull_mode: :pullup)
-    :ok = GPIO.set_interrupts(pin, :falling)
+    {:ok, ^pin_num} = GPIO.subscribe(pin, trigger: :falling, tag: pin_num)
     {pin_num, pin}
   end
 
@@ -65,7 +64,7 @@ defmodule Ytm.Keypad do
 
   @impl GenServer
   def handle_info(
-        {:circuits_gpio, pin_num, timestamp, 0},
+        {:circuits_gpio, %{ref: pin_num, timestamp: timestamp, value: 0}},
         %__MODULE__{last_press_at: prev} = state
       )
       when debounced?(timestamp, prev) do
@@ -90,12 +89,12 @@ defmodule Ytm.Keypad do
         end
       end)
 
-    if key, do: send(state.owner, {:keypad, key})
+    if key, do: Phoenix.PubSub.broadcast(Ytm.PubSub, @topic, {:keypad, key})
 
     {:noreply, %{state | last_press_at: timestamp}}
   end
 
   # ignore messages that are too quick, or on button release
   @impl GenServer
-  def handle_info({:circuits_gpio, _pin_num, _timestamp, _value}, state), do: {:noreply, state}
+  def handle_info({:circuits_gpio, %{}}, state), do: {:noreply, state}
 end
