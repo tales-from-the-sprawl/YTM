@@ -1,24 +1,19 @@
 defmodule Ytm.Keypad do
   @moduledoc """
-  GenServer driver for a matrix keypad (e.g. a 4x4 12-key keypad with
-  `A`/`B`/`C`/`D` keys) wired to GPIO rows and columns.
+  GenServer driver for a 4x4 matrix keypad (12-key keypad plus `A`/`B`/`C`/`D`
+  keys) wired to GPIO rows and columns.
 
   Rows are opened as inputs with an internal pull-up and interrupts on the
   falling edge; columns are opened as outputs, driven high one at a time to
   scan for which row went low. On a debounced keypress, `{:keypad, key}` is
   sent to the owning process (the caller of `start_link/1`, by default).
 
-  At minimum, pass either `:size` or `:matrix` to `start_link/1`:
+  `start_link/1` accepts:
 
-  * `:size` - selects a built-in matrix: `:four_by_four`/`"4x4"` (standard
-    12-key keypad plus `A`/`B`/`C`/`D`), `:four_by_three`/`"4x3"` (standard
-    12-key keypad), or `:one_by_four`/`"1x4"`.
-  * `:matrix` - a custom `row x col` matrix of key values, e.g.
-    `[["1", "2"], ["3", "4"]]`. Takes precedence over `:size` if given.
-  * `:row_pins` - GPIO pins for keypad rows, opened as inputs
-    (`pull_mode: :pullup`). Defaults to `[17, 27, 23, 24]`.
-  * `:col_pins` - GPIO pins for keypad columns, opened as outputs.
-    Defaults to `[5, 6, 13, 26]`.
+  * `:row_pins` - the 4 GPIO pins for keypad rows, opened as inputs
+    (`pull_mode: :pullup`). Defaults to `[6, 13, 19, 26]`.
+  * `:col_pins` - the 4 GPIO pins for keypad columns, opened as outputs.
+    Defaults to `[12, 16, 20, 21]`.
   * `:owner` - process to send `{:keypad, key}` messages to. Defaults to
     the caller of `start_link/1`.
   """
@@ -29,35 +24,19 @@ defmodule Ytm.Keypad do
 
   @default_row_pins [6, 13, 19, 26]
   @default_col_pins [12, 16, 20, 21]
-  # @default_row_pins [17, 27, 23, 24]
-  # @default_col_pins [5, 6, 13, 26]
   @debounce_interval_ms 100
 
-  @matrix_4x4 [
+  @matrix [
     ["1", "2", "3", "A"],
     ["4", "5", "6", "B"],
     ["7", "8", "9", "C"],
     ["*", "0", "#", "D"]
   ]
 
-  @matrix_4x3 [
-    ["1", "2", "3"],
-    ["4", "5", "6"],
-    ["7", "8", "9"],
-    ["*", "0", "#"]
-  ]
-
-  @matrix_1x4 [["1", "2", "3", "4"]]
-
-  defstruct [:owner, :matrix, row_pins: [], col_pins: [], last_press_at: 0]
-
-  @type matrix :: [[term()]]
-  @type size :: :four_by_four | :four_by_three | :one_by_four | String.t()
+  defstruct [:owner, row_pins: [], col_pins: [], last_press_at: 0]
 
   @type start_opt ::
-          {:size, size()}
-          | {:matrix, matrix()}
-          | {:row_pins, [pos_integer()]}
+          {:row_pins, [pos_integer()]}
           | {:col_pins, [pos_integer()]}
           | {:owner, pid()}
 
@@ -69,20 +48,29 @@ defmodule Ytm.Keypad do
 
   @impl GenServer
   def init({caller, opts}) do
-    matrix = matrix_from_opts(opts)
     row_pins = Keyword.get(opts, :row_pins, @default_row_pins)
     col_pins = Keyword.get(opts, :col_pins, @default_col_pins)
 
-    validate_dimensions!(matrix, row_pins, col_pins)
+    validate_dimensions!(row_pins, col_pins)
 
     state = %__MODULE__{
       owner: Keyword.get(opts, :owner, caller),
-      matrix: matrix,
       row_pins: Enum.map(row_pins, &open_row_pin!/1),
       col_pins: Enum.map(col_pins, &open_col_pin!/1)
     }
 
     {:ok, state}
+  end
+
+  @spec validate_dimensions!([pos_integer()], [pos_integer()]) :: :ok
+  defp validate_dimensions!(row_pins, col_pins) do
+    if length(row_pins) != 4,
+      do: raise(ArgumentError, "expected 4 row pins but got #{length(row_pins)}")
+
+    if length(col_pins) != 4,
+      do: raise(ArgumentError, "expected 4 column pins but got #{length(col_pins)}")
+
+    :ok
   end
 
   @spec open_row_pin!(pos_integer()) :: {pos_integer(), GPIO.Handle.t()}
@@ -122,7 +110,7 @@ defmodule Ytm.Keypad do
         GPIO.write(col, 0)
 
         case row_val do
-          1 -> {:halt, state.matrix |> Enum.at(row_index) |> Enum.at(col_index)}
+          1 -> {:halt, @matrix |> Enum.at(row_index) |> Enum.at(col_index)}
           0 -> {:cont, nil}
         end
       end)
@@ -135,54 +123,4 @@ defmodule Ytm.Keypad do
   # ignore messages that are too quick, or on button release
   @impl GenServer
   def handle_info({:circuits_gpio, _pin_num, _timestamp, _value}, state), do: {:noreply, state}
-
-  @spec matrix_from_opts(keyword()) :: matrix()
-  defp matrix_from_opts(opts) do
-    case Keyword.get(opts, :matrix) do
-      matrix when is_list(matrix) -> validate_matrix!(matrix)
-      nil -> matrix_for_size(Keyword.get(opts, :size))
-    end
-  end
-
-  @spec validate_matrix!(matrix()) :: matrix()
-  defp validate_matrix!(matrix) do
-    case matrix |> Enum.map(&length/1) |> Enum.uniq() do
-      [_] -> matrix
-      _ -> raise ArgumentError, "matrix columns must be equal\n#{inspect(matrix)}"
-    end
-  end
-
-  @spec validate_dimensions!(matrix(), [pos_integer()], [pos_integer()]) :: :ok
-  defp validate_dimensions!(matrix, row_pins, col_pins) do
-    row_count = length(matrix)
-    col_count = matrix |> List.first() |> length()
-
-    if row_count != length(row_pins),
-      do:
-        raise(
-          ArgumentError,
-          "expected #{row_count} row pins but only #{length(row_pins)} were given"
-        )
-
-    if col_count != length(col_pins),
-      do:
-        raise(
-          ArgumentError,
-          "expected #{col_count} column pins but only #{length(col_pins)} were given"
-        )
-
-    :ok
-  end
-
-  @spec matrix_for_size(size() | nil) :: matrix()
-  defp matrix_for_size(:four_by_four), do: matrix_for_size("4x4")
-  defp matrix_for_size(:four_by_three), do: matrix_for_size("4x3")
-  defp matrix_for_size(:one_by_four), do: matrix_for_size("1x4")
-  defp matrix_for_size("4x4"), do: @matrix_4x4
-  defp matrix_for_size("4x3"), do: @matrix_4x3
-  defp matrix_for_size("1x4"), do: @matrix_1x4
-  defp matrix_for_size(nil), do: raise(ArgumentError, "must provide a keypad size or matrix")
-
-  defp matrix_for_size(size),
-    do: raise(ArgumentError, "unsupported matrix size: #{inspect(size)}")
 end
