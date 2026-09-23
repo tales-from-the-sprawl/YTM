@@ -4,40 +4,84 @@ defmodule YtmWeb.TransferLive do
 
   def render(assigns) do
     ~H"""
-    <main class="h-screen">
-      <p class="text-6xl font-mono text-center mt-64">Transfer funds</p>
+    <main class="grid place-content-center h-screen">
+      <div>
+        <p class="text-2xl font-mono text-center">Transfer Funds</p>
+        <p class="text-lg font-mono text-center">Check Balance [B]</p>
 
-      <.cred_stick class="left-48" active={@left} />
+        <div class="aura aura-glow block mx-8 my-3">
+          <input
+            type="text"
+            placeholder="No refunds"
+            class="input input-xl w-full text-center font-mono"
+          />
+        </div>
 
-      <.sin_card class="right-48" active={@right} />
+        <div :if={@success} class="aura aura-glow text-success">
+          <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
+            Transfer Successful
+          </p>
+        </div>
+
+        <div :if={@error} class="aura aura-glow text-error">
+          <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
+            ERROR: {@error}
+          </p>
+        </div>
+
+        <div :if={false} class="aura aura-glow text-error">
+          <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
+            ERROR: Left Transfer Slot Empty
+          </p>
+        </div>
+        <div :if={false} class="aura aura-glow text-error">
+          <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
+            ERROR: Transfer Failed
+          </p>
+        </div>
+      </div>
+
+      <.cred_stick class="left-32" active={@left} glow={false} />
+
+      <.sin_card class="right-32" active={@right} glow={false} />
     </main>
     """
   end
 
+  attr :class, :string, default: nil
+  attr :glow, :boolean, default: false
+
   defp cred_stick(assigns) do
     ~H"""
-    <div class={[
-      "absolute bottom-0 h-116 w-48 border-8 border-b-0 p-2 pb-0",
-      if(@active,
-        do: "bg-yellow-500 border-yellow-600 border-solid",
-        else: "border-yellow-500 border-dashed"
-      ),
-      @class
-    ]}>
+    <div class={["absolute bottom-0 pb-0", if(@glow, do: "aura aura-gold"), @class]}>
+      <div class="bg-base-100">
+        <div class={[
+          "h-32 w-16 border-4 border-b-0",
+          if(@active,
+            do: "bg-yellow-500 border-yellow-600 border-solid",
+            else: "bg-base-100 border-yellow-500 border-dashed"
+          )
+        ]}>
+        </div>
+      </div>
     </div>
     """
   end
 
+  attr :class, :string, default: nil
+  attr :glow, :boolean, default: false
+
   defp sin_card(assigns) do
     ~H"""
-    <div class={[
-      "absolute bottom-0 h-96 w-96 border-8 border-b-0 p-2 pb-0",
-      if(@active,
-        do: "bg-slate-100 border-slate-400 border-solid",
-        else: "border-slate-100 border-dashed"
-      ),
-      @class
-    ]}>
+    <div class={["absolute bottom-0 pb-0", if(@glow, do: "aura aura-silver"), @class]}>
+      <div class={[
+        "h-24 w-24 border-4 border-b-0",
+        if(@active,
+          do: "bg-slate-100 border-slate-400 border-solid",
+          else: "bg-base-100 border-slate-100 border-dashed"
+        )
+      ]}>
+      </div>
     </div>
     """
   end
@@ -49,7 +93,7 @@ defmodule YtmWeb.TransferLive do
 
     socket =
       socket
-      |> assign(left: false, right: false)
+      |> assign(left: false, right: false, success: false, error: false)
 
     {:ok, socket}
   end
