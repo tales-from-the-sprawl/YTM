@@ -5,6 +5,9 @@ defmodule Ytm.CardButton.Supervisor do
   GPIO handle that reconnects automatically after failures.
 
   Buttons are read from `config :ytm, #{inspect(__MODULE__)}, buttons: [...]`.
+  As with `Ytm.PN532.Supervisor`, the `Registry` used to look servers up by bus
+  name is started first under `:rest_for_one`, so the `Server`s re-register if
+  it ever crashes.
   """
 
   use Supervisor
@@ -19,10 +22,11 @@ defmodule Ytm.CardButton.Supervisor do
     buttons = Application.get_env(:ytm, __MODULE__, [])[:buttons] || []
 
     children =
-      Enum.map(buttons, fn {pin, _bus_name} = button ->
-        Supervisor.child_spec({Ytm.CardButton.Server, button}, id: {Ytm.CardButton.Server, pin})
-      end)
+      [{Registry, keys: :unique, name: Ytm.CardButton.Registry}] ++
+        Enum.map(buttons, fn {pin, _bus_name} = button ->
+          Supervisor.child_spec({Ytm.CardButton.Server, button}, id: {Ytm.CardButton.Server, pin})
+        end)
 
-    Supervisor.init(children, strategy: :one_for_one)
+    Supervisor.init(children, strategy: :rest_for_one)
   end
 end

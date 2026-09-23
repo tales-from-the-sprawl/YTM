@@ -101,9 +101,16 @@ defmodule YtmWeb.TransferLive do
       Phoenix.PubSub.subscribe(Ytm.PubSub, Ytm.Keypad.topic())
     end
 
+    # Read after subscribing so an edge in between isn't missed.
     socket =
       socket
-      |> assign(left: false, right: false, success: false, error: false, amount: "")
+      |> assign(
+        left: CardButtonServer.pressed?("spidev0.1"),
+        right: CardButtonServer.pressed?("spidev0.0"),
+        success: false,
+        error: false,
+        amount: ""
+      )
 
     {:ok, socket}
   end
