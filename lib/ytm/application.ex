@@ -43,6 +43,7 @@ defmodule Ytm.Application do
         # Starts a worker by calling: Ytm.Worker.start_link(arg)
         # {Ytm.Worker, arg},
         {Ytm.UdevdServer, []},
+        {Ytm.Keypad, []},
         {Ytm.KioskSupervisor, []},
         {Task, &start_node/0}
       ]

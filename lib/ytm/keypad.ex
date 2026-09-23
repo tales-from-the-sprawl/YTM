@@ -3,11 +3,15 @@ defmodule Ytm.Keypad do
   GenServer driver for a 4x4 matrix keypad (12-key keypad plus `A`/`B`/`C`/`D`
   keys) wired to GPIO rows 6/13/19/26 and columns 12/16/20/21.
 
-  Rows are opened as inputs with an internal pull-up and interrupts on the
-  falling edge; columns are opened as outputs, driven high one at a time to
-  scan for which row went low. On a debounced keypress, broadcasts, over
-  `Ytm.PubSub` on `#{inspect(__MODULE__)}.topic/0`, a `{:keypad, key}`
-  message.
+  Rows are opened as open-drain outputs with an internal pull-up, and columns as
+  inputs with an internal pull-up. Every 10 ms, each row is pulled low in turn
+  and the column that reads low identifies the pressed key. Open-drain rows are
+  only ever driven low, so two rows shorted together (or two keys in the same
+  column pressed at once) can't make two outputs fight each other.
+
+  A key has to read the same for 3 consecutive scans (~30 ms) before it
+  counts. On each debounced press, broadcasts, over `Ytm.PubSub` on
+  `#{inspect(__MODULE__)}.topic/0`, a `{:keypad, key}` message.
   """
 
   use GenServer
@@ -16,7 +20,8 @@ defmodule Ytm.Keypad do
 
   @row_pins [6, 13, 19, 26]
   @col_pins [12, 16, 20, 21]
-  @debounce_interval_ms 100
+  @scan_interval_ms 10
+  @debounce_scans 3
   @topic "keypad"
 
   @matrix [
@@ -26,7 +31,7 @@ defmodule Ytm.Keypad do
     ["*", "0", "#", "D"]
   ]
 
-  defstruct row_pins: [], col_pins: [], last_press_at: 0
+  defstruct row_pins: [], col_pins: [], pressed: nil, candidate: nil, candidate_count: 0
 
   @doc "PubSub topic broadcasting `{:keypad, key}` for every keypress."
   @spec topic() :: String.t()
@@ -44,57 +49,56 @@ defmodule Ytm.Keypad do
       col_pins: Enum.map(@col_pins, &open_col_pin!/1)
     }
 
+    schedule_scan()
     {:ok, state}
   end
 
-  @spec open_row_pin!(pos_integer()) :: {pos_integer(), GPIO.Handle.t()}
+  @spec open_row_pin!(pos_integer()) :: GPIO.Handle.t()
   defp open_row_pin!(pin_num) do
-    {:ok, pin} = GPIO.open(pin_num, :input, pull_mode: :pullup)
-    {:ok, ^pin_num} = GPIO.subscribe(pin, trigger: :falling, tag: pin_num)
-    {pin_num, pin}
+    {:ok, pin} =
+      GPIO.open(pin_num, :output, initial_value: 1, drive_mode: :open_drain, pull_mode: :pullup)
+
+    pin
   end
 
   @spec open_col_pin!(pos_integer()) :: GPIO.Handle.t()
   defp open_col_pin!(pin_num) do
-    {:ok, pin} = GPIO.open(pin_num, :output, initial_value: 0)
+    {:ok, pin} = GPIO.open(pin_num, :input, pull_mode: :pullup)
     pin
   end
 
-  defguardp debounced?(current, prev) when (current - prev) / 1.0e6 > @debounce_interval_ms
-
   @impl GenServer
-  def handle_info(
-        {:circuits_gpio, %{ref: pin_num, timestamp: timestamp, value: 0}},
-        %__MODULE__{last_press_at: prev} = state
-      )
-      when debounced?(timestamp, prev) do
-    {{_pin_num, row_pin}, row_index} =
-      state.row_pins
-      |> Enum.with_index()
-      |> Enum.find(fn {{row_pin_num, _pin}, _index} -> row_pin_num == pin_num end)
-
-    key =
-      state.col_pins
-      |> Enum.with_index()
-      |> Enum.reduce_while(nil, fn {col, col_index}, nil ->
-        # Drive the column high, then read the row pin again - if it reads
-        # high, we've found which column the press belongs to.
-        GPIO.write(col, 1)
-        row_val = GPIO.read(row_pin)
-        GPIO.write(col, 0)
-
-        case row_val do
-          1 -> {:halt, @matrix |> Enum.at(row_index) |> Enum.at(col_index)}
-          0 -> {:cont, nil}
-        end
-      end)
-
-    if key, do: Phoenix.PubSub.broadcast(Ytm.PubSub, @topic, {:keypad, key})
-
-    {:noreply, %{state | last_press_at: timestamp}}
+  def handle_info(:scan, state) do
+    schedule_scan()
+    {:noreply, debounce(state, scan(state))}
   end
 
-  # ignore messages that are too quick, or on button release
-  @impl GenServer
-  def handle_info({:circuits_gpio, %{}}, state), do: {:noreply, state}
+  defp schedule_scan(), do: Process.send_after(self(), :scan, @scan_interval_ms)
+
+  # Returns the first pressed key found, or nil if none is pressed.
+  @spec scan(%__MODULE__{}) :: String.t() | nil
+  defp scan(state) do
+    state.row_pins
+    |> Enum.zip(@matrix)
+    |> Enum.find_value(fn {row, keys} ->
+      GPIO.write(row, 0)
+      col_index = Enum.find_index(state.col_pins, &(GPIO.read(&1) == 0))
+      GPIO.write(row, 1)
+
+      col_index && Enum.at(keys, col_index)
+    end)
+  end
+
+  defp debounce(%__MODULE__{candidate: key} = state, key) do
+    count = state.candidate_count + 1
+
+    if count == @debounce_scans and key != state.pressed do
+      if key, do: Phoenix.PubSub.broadcast(Ytm.PubSub, @topic, {:keypad, key})
+      %{state | pressed: key, candidate_count: count}
+    else
+      %{state | candidate_count: count}
+    end
+  end
+
+  defp debounce(state, key), do: %{state | candidate: key, candidate_count: 1}
 end

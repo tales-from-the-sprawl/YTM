@@ -15,6 +15,9 @@ defmodule YtmWeb.TransferLive do
           <div class="aura aura-glow">
             <input
               type="text"
+              inputmode="none"
+              readonly
+              value={@amount}
               placeholder="No refunds"
               class="input input-xl w-full text-center font-mono"
             />
@@ -95,11 +98,12 @@ defmodule YtmWeb.TransferLive do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Ytm.PubSub, CardButtonServer.topic())
+      Phoenix.PubSub.subscribe(Ytm.PubSub, Ytm.Keypad.topic())
     end
 
     socket =
       socket
-      |> assign(left: false, right: false, success: false, error: false)
+      |> assign(left: false, right: false, success: false, error: false, amount: "")
 
     {:ok, socket}
   end
@@ -111,6 +115,16 @@ defmodule YtmWeb.TransferLive do
   def handle_info({:card_button_released, bus_name}, socket) do
     {:noreply, assign(socket, bus_side(bus_name), false)}
   end
+
+  def handle_info({:keypad, key}, socket) do
+    {:noreply, update(socket, :amount, &keypad_input(&1, key))}
+  end
+
+  # Digits append, `*` deletes the last character, `C` clears; other keys are ignored.
+  defp keypad_input(amount, key) when key in ~w(0 1 2 3 4 5 6 7 8 9), do: amount <> key
+  defp keypad_input(amount, "*"), do: String.slice(amount, 0..-2//1)
+  defp keypad_input(_amount, "C"), do: ""
+  defp keypad_input(amount, _key), do: amount
 
   defp bus_side(bus_name) do
     case bus_name do
