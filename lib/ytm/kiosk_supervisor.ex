@@ -9,6 +9,9 @@ defmodule Ytm.KioskSupervisor do
   @drm_connector_pattern ~r/^card[0-9]+-.+$/
   @dbus_socket_path "/run/dbus-session-bus"
   @dbus_session_bus_address "unix:path=#{@dbus_socket_path}"
+  # The 2560x1600 panel is 22.5x14 cm (~290 DPI); cog's device scale is
+  # relative to 96 DPI, so 3 renders CSS sizes at roughly true physical size.
+  @device_scale 3
 
   @spec start_link(keyword()) :: Supervisor.on_start()
   def start_link(args) do
@@ -48,7 +51,12 @@ defmodule Ytm.KioskSupervisor do
         {MuonTrap.Daemon,
          [
            "cog",
-           ["--platform=drm", "--platform-params=renderer=gles", "http://localhost:4000/"] ++
+           [
+             "--platform=drm",
+             "--platform-params=renderer=gles",
+             "--device-scale=#{@device_scale}",
+             "http://localhost:4000/"
+           ] ++
              Myelin.browser_args(),
            [
              env: cog_env,

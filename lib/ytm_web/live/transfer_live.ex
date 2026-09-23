@@ -5,39 +5,43 @@ defmodule YtmWeb.TransferLive do
   def render(assigns) do
     ~H"""
     <main class="grid place-content-center h-screen">
-      <div>
-        <p class="text-2xl font-mono text-center">Transfer Funds</p>
-        <p class="text-lg font-mono text-center">Check Balance [B]</p>
-
-        <div class="aura aura-glow block mx-8 my-3">
-          <input
-            type="text"
-            placeholder="No refunds"
-            class="input input-xl w-full text-center font-mono"
-          />
+      <div class="flex flex-col gap-10">
+        <div>
+          <p class="text-2xl font-mono text-center">Transfer Funds</p>
+          <p class="text-lg font-mono text-center">Check Balance [B]</p>
         </div>
 
-        <div :if={@success} class="aura aura-glow text-success">
-          <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
-            Transfer Successful
-          </p>
-        </div>
+        <div class="flex flex-col min-w-xl">
+          <div class="aura aura-glow">
+            <input
+              type="text"
+              placeholder="No refunds"
+              class="input input-xl w-full text-center font-mono"
+            />
+          </div>
 
-        <div :if={@error} class="aura aura-glow text-error">
-          <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
-            ERROR: {@error}
-          </p>
-        </div>
+          <div :if={@success} class="aura aura-glow text-success">
+            <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
+              Transfer Successful
+            </p>
+          </div>
 
-        <div :if={false} class="aura aura-glow text-error">
-          <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
-            ERROR: Left Transfer Slot Empty
-          </p>
-        </div>
-        <div :if={false} class="aura aura-glow text-error">
-          <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
-            ERROR: Transfer Failed
-          </p>
+          <div :if={@error} class="aura aura-glow text-error">
+            <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
+              ERROR: {@error}
+            </p>
+          </div>
+
+          <div :if={false} class="aura aura-glow text-error">
+            <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
+              ERROR: Left Transfer Slot Empty
+            </p>
+          </div>
+          <div :if={false} class="aura aura-glow text-error">
+            <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
+              ERROR: Transfer Failed
+            </p>
+          </div>
         </div>
       </div>
 
@@ -50,6 +54,7 @@ defmodule YtmWeb.TransferLive do
 
   attr :class, :string, default: nil
   attr :glow, :boolean, default: false
+  attr :active, :boolean, default: false
 
   defp cred_stick(assigns) do
     ~H"""
@@ -70,6 +75,7 @@ defmodule YtmWeb.TransferLive do
 
   attr :class, :string, default: nil
   attr :glow, :boolean, default: false
+  attr :active, :boolean, default: false
 
   defp sin_card(assigns) do
     ~H"""
