@@ -1,29 +1,23 @@
 defmodule Ytm.Keypad do
   @moduledoc """
   GenServer driver for a 4x4 matrix keypad (12-key keypad plus `A`/`B`/`C`/`D`
-  keys) wired to GPIO rows and columns.
+  keys) wired to GPIO rows 6/13/19/26 and columns 12/16/20/21.
 
   Rows are opened as inputs with an internal pull-up and interrupts on the
   falling edge; columns are opened as outputs, driven high one at a time to
   scan for which row went low. On a debounced keypress, `{:keypad, key}` is
   sent to the owning process (the caller of `start_link/1`, by default).
 
-  `start_link/1` accepts:
-
-  * `:row_pins` - the 4 GPIO pins for keypad rows, opened as inputs
-    (`pull_mode: :pullup`). Defaults to `[6, 13, 19, 26]`.
-  * `:col_pins` - the 4 GPIO pins for keypad columns, opened as outputs.
-    Defaults to `[12, 16, 20, 21]`.
-  * `:owner` - process to send `{:keypad, key}` messages to. Defaults to
-    the caller of `start_link/1`.
+  `start_link/1` accepts an `:owner` option: the process to send
+  `{:keypad, key}` messages to. Defaults to the caller of `start_link/1`.
   """
 
   use GenServer
 
   alias Circuits.GPIO
 
-  @default_row_pins [6, 13, 19, 26]
-  @default_col_pins [12, 16, 20, 21]
+  @row_pins [6, 13, 19, 26]
+  @col_pins [12, 16, 20, 21]
   @debounce_interval_ms 100
 
   @matrix [
@@ -35,10 +29,7 @@ defmodule Ytm.Keypad do
 
   defstruct [:owner, row_pins: [], col_pins: [], last_press_at: 0]
 
-  @type start_opt ::
-          {:row_pins, [pos_integer()]}
-          | {:col_pins, [pos_integer()]}
-          | {:owner, pid()}
+  @type start_opt :: {:owner, pid()}
 
   @spec start_link([start_opt() | GenServer.option()]) :: GenServer.on_start()
   def start_link(opts) do
@@ -48,29 +39,13 @@ defmodule Ytm.Keypad do
 
   @impl GenServer
   def init({caller, opts}) do
-    row_pins = Keyword.get(opts, :row_pins, @default_row_pins)
-    col_pins = Keyword.get(opts, :col_pins, @default_col_pins)
-
-    validate_dimensions!(row_pins, col_pins)
-
     state = %__MODULE__{
       owner: Keyword.get(opts, :owner, caller),
-      row_pins: Enum.map(row_pins, &open_row_pin!/1),
-      col_pins: Enum.map(col_pins, &open_col_pin!/1)
+      row_pins: Enum.map(@row_pins, &open_row_pin!/1),
+      col_pins: Enum.map(@col_pins, &open_col_pin!/1)
     }
 
     {:ok, state}
-  end
-
-  @spec validate_dimensions!([pos_integer()], [pos_integer()]) :: :ok
-  defp validate_dimensions!(row_pins, col_pins) do
-    if length(row_pins) != 4,
-      do: raise(ArgumentError, "expected 4 row pins but got #{length(row_pins)}")
-
-    if length(col_pins) != 4,
-      do: raise(ArgumentError, "expected 4 column pins but got #{length(col_pins)}")
-
-    :ok
   end
 
   @spec open_row_pin!(pos_integer()) :: {pos_integer(), GPIO.Handle.t()}
