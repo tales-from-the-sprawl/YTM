@@ -42,14 +42,9 @@ defmodule YtmWeb.TransferLive do
             </p>
           </div>
 
-          <div :if={false} class="aura aura-glow text-error">
+          <div :if={@transferring} class="aura aura-glow">
             <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
-              ERROR: Left Transfer Slot Empty
-            </p>
-          </div>
-          <div :if={false} class="aura aura-glow text-error">
-            <p class="text-lg font-mono text-center bg-base-100 rounded-box px-1.5">
-              ERROR: Transfer Failed
+              Transferring...
             </p>
           </div>
         </div>
@@ -175,18 +170,12 @@ defmodule YtmWeb.TransferLive do
         left_card: nil,
         right_card: nil,
         success: false,
-        error: false,
+        error: nil,
+        transferring: false,
         amount: ""
       )
 
-    socket =
-      if connected?(socket) do
-        Enum.reduce(@bus_names, socket, fn bus_name, socket ->
-          if socket.assigns[bus_side(bus_name)], do: start_read(socket, bus_name), else: socket
-        end)
-      else
-        socket
-      end
+    socket = if connected?(socket), do: refresh_cards(socket), else: socket
 
     {:ok, socket}
   end
@@ -211,8 +200,22 @@ defmodule YtmWeb.TransferLive do
     {:noreply, socket}
   end
 
+  # Input is locked while a transfer is in flight so the amount can't change under it.
+  def handle_info({:keypad, _key}, %{assigns: %{transferring: true}} = socket) do
+    {:noreply, socket}
+  end
+
+  def handle_info({:keypad, "#"}, socket) do
+    {:noreply, start_transfer(socket)}
+  end
+
   def handle_info({:keypad, key}, socket) do
-    {:noreply, update(socket, :amount, &keypad_input(&1, key))}
+    socket =
+      socket
+      |> assign(success: false, error: nil)
+      |> update(:amount, &keypad_input(&1, key))
+
+    {:noreply, socket}
   end
 
   # Digits append, `*` deletes the last character, `C` clears; other keys are ignored.
@@ -220,6 +223,18 @@ defmodule YtmWeb.TransferLive do
   defp keypad_input(amount, "*"), do: String.slice(amount, 0..-2//1)
   defp keypad_input(_amount, "C"), do: ""
   defp keypad_input(amount, _key), do: amount
+
+  def handle_async(:transfer, {:ok, {:ok, _result}}, socket) do
+    {:noreply, assign(socket, transferring: false, success: true, amount: "")}
+  end
+
+  def handle_async(:transfer, {:ok, {:error, reason}}, socket) do
+    {:noreply, transfer_failed(socket, reason)}
+  end
+
+  def handle_async(:transfer, {:exit, reason}, socket) do
+    {:noreply, transfer_failed(socket, reason)}
+  end
 
   def handle_async({:read_card, bus_name}, {:ok, card}, socket) do
     {:noreply, assign(socket, card_assign(bus_side(bus_name)), card)}
@@ -235,6 +250,52 @@ defmodule YtmWeb.TransferLive do
         else: socket
 
     {:noreply, socket}
+  end
+
+  defp start_transfer(socket) do
+    %{left: left, right: right, amount: amount} = socket.assigns
+
+    cond do
+      not left ->
+        assign(socket, success: false, error: "Left Transfer Slot Empty")
+
+      not right ->
+        assign(socket, success: false, error: "Right Transfer Slot Empty")
+
+      true ->
+        case Integer.parse(amount) do
+          {amount, ""} when amount > 0 ->
+            socket
+            |> assign(transferring: true, success: false, error: nil)
+            |> start_async(:transfer, fn -> Finance.transfer(amount) end)
+
+          _invalid ->
+            assign(socket, success: false, error: "Enter An Amount")
+        end
+    end
+  end
+
+  defp transfer_failed(socket, reason) do
+    Logger.error("Transfer failed: #{inspect(reason)}")
+
+    assign(socket, transferring: false, error: transfer_error_message(reason))
+  end
+
+  defp transfer_error_message(:invalid_amount), do: "Invalid Amount"
+  defp transfer_error_message(:insufficient_funds), do: "Insufficient Funds"
+  defp transfer_error_message(:card_not_recognized), do: "Card Not Recognized"
+  defp transfer_error_message(:no_text_record), do: "Card Not Recognized"
+
+  defp transfer_error_message({:reconciliation_required, _details}),
+    do: "Transfer Failed, Contact Staff"
+
+  defp transfer_error_message(_reason), do: "Transfer Failed"
+
+  # Starts a read on every slot that currently has a card inserted.
+  defp refresh_cards(socket) do
+    Enum.reduce(@bus_names, socket, fn bus_name, socket ->
+      if socket.assigns[bus_side(bus_name)], do: start_read(socket, bus_name), else: socket
+    end)
   end
 
   # Reads the card off the bus in the background so a slow scan doesn't stall
