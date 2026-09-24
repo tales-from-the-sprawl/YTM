@@ -14,6 +14,13 @@ defmodule Ytm.PN532.Server do
   runtime) the reader is kept in `Ytm.PN532.power_down/1` whenever it's idle,
   with its RF field off, and woken just for the duration of each request.
   A reader that fails to wake up is treated as a lost connection.
+
+  `hold_awake/2` overrides low-power mode while a card is known to be
+  present (`Ytm.CardButton.Server` sets it from its button's level): a held
+  reader is woken right away and kept awake between requests, so a card
+  sitting in the slot stays powered and selected and requests skip the
+  wake-up cost. Requests still wake a sleeping reader on demand, so a missed
+  button edge only costs latency, never a failed request.
   """
 
   use GenServer
@@ -35,6 +42,7 @@ defmodule Ytm.PN532.Server do
           error: term(),
           firmware_version: {byte(), byte(), byte(), byte()} | nil,
           low_power: boolean(),
+          held: boolean(),
           asleep: boolean()
         }
 
@@ -45,6 +53,7 @@ defmodule Ytm.PN532.Server do
             error: nil,
             firmware_version: nil,
             low_power: false,
+            held: false,
             asleep: false
 
   @doc """
@@ -70,6 +79,19 @@ defmodule Ytm.PN532.Server do
   @spec set_low_power(String.t(), boolean()) :: :ok | {:error, :not_started | term()}
   def set_low_power(bus_name, enabled) when is_boolean(enabled) do
     call(bus_name, {:set_low_power, enabled}, @status_call_timeout)
+  end
+
+  @doc """
+  Keeps the reader awake (`true`) or lets low-power mode power it down again
+  when idle (`false`); see the moduledoc. Asynchronous, so a caller isn't
+  blocked behind an in-flight scan, and a no-op if no server runs on the bus.
+  """
+  @spec hold_awake(String.t(), boolean()) :: :ok
+  def hold_awake(bus_name, held) when is_boolean(held) do
+    case Registry.lookup(Ytm.PN532.Registry, bus_name) do
+      [{pid, _value}] -> GenServer.cast(pid, {:hold_awake, held})
+      [] -> :ok
+    end
   end
 
   @doc "Waits for a passive target and reads its NDEF message, mirroring the driver's own composition."
@@ -116,8 +138,7 @@ defmodule Ytm.PN532.Server do
   end
 
   def handle_call({:set_low_power, true}, _from, state) do
-    state = %{state | low_power: true}
-    {:reply, :ok, if(state.asleep, do: state, else: power_down(state))}
+    {:reply, :ok, settle(%{state | low_power: true})}
   end
 
   def handle_call({:set_low_power, false}, _from, state) do
@@ -146,24 +167,46 @@ defmodule Ytm.PN532.Server do
   end
 
   @impl GenServer
+  def handle_cast({:hold_awake, held}, %__MODULE__{status: :disconnected} = state) do
+    {:noreply, %{state | held: held}}
+  end
+
+  def handle_cast({:hold_awake, held}, state) do
+    {:noreply, settle(%{state | held: held})}
+  end
+
+  @impl GenServer
   def terminate(_reason, state) do
     if state.pn532, do: PN532.close(state.pn532)
     :ok
   end
 
   # Runs `fun` against a woken-up reader and replies with its result, powering
-  # the reader back down afterwards if low-power mode is on.
+  # the reader back down afterwards if it should sleep while idle.
   defp with_awake(state, fun) do
     case wake_up(state) do
       {:ok, state} ->
         result = fun.(state.pn532)
-        state = if state.low_power, do: power_down(state), else: state
-        {:reply, result, state}
+        {:reply, result, settle(state)}
 
       {:error, reason, state} ->
         {:reply, {:error, reason}, state}
     end
   end
+
+  # Puts a connected, idle reader into the power state its low-power/held
+  # flags call for. A failed wake-up has already been handled by `wake_up/1`.
+  defp settle(%__MODULE__{low_power: true, held: false, asleep: false} = state),
+    do: power_down(state)
+
+  defp settle(%__MODULE__{asleep: true} = state) when not state.low_power or state.held do
+    case wake_up(state) do
+      {:ok, state} -> state
+      {:error, _reason, state} -> state
+    end
+  end
+
+  defp settle(state), do: state
 
   defp wake_up(%__MODULE__{asleep: false} = state), do: {:ok, state}
 
@@ -211,7 +254,7 @@ defmodule Ytm.PN532.Server do
             firmware_version: firmware_version
         }
 
-        if state.low_power, do: power_down(state), else: state
+        settle(%{state | asleep: false})
 
       {:error, reason} ->
         if state.status == :connected do

@@ -140,7 +140,9 @@ limit, not something the receiver settings can fix.
 chip accepts: a wake edge within ~1 ms of the PowerDown response is lost (measured on hardware) and
 the next command times out. `Ytm.PN532.Server` has an opt-in low-power mode (`low_power: true` in
 the `Ytm.PN532.Supervisor` config, or `set_low_power/2`) that keeps idle readers powered down and
-wakes them per request.
+wakes them per request. `Ytm.CardButton.Server` overrides it via `hold_awake/2` while its card
+button is pressed, so a reader with a card in the slot stays awake (field on, card selected) and
+requests skip the ~80–90 ms wake-up; the per-request wake remains as the fallback for a missed edge.
 
 Note that a card's SAK alone doesn't guarantee which key scheme a Classic-compliant tag actually
 uses — `A0A1A2A3A4A5`/`D3F7D3F7D3F7` are just the NFC Forum/NXP-documented defaults for

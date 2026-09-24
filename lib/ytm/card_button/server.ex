@@ -7,6 +7,12 @@ defmodule Ytm.CardButton.Server do
   bus_name}` message for each rising edge, both debounced. The current level
   can also be queried with `pressed?/1`, e.g. to initialise a view on mount.
 
+  It also keeps the reader on `bus_name` awake while the button is held (see
+  `Ytm.PN532.Server.hold_awake/2`), following the raw level rather than the
+  debounced broadcasts so the hold always ends up matching the button. A
+  button whose GPIO isn't open releases its hold, since it can't vouch for a
+  card being present.
+
   Reconnection is always-on and has no manual override, mirroring
   `Ytm.PN532.Server`: a GPIO that fails to open (or a bus error) is retried on
   `@retry_interval_ms` forever.
@@ -15,6 +21,7 @@ defmodule Ytm.CardButton.Server do
   use GenServer
 
   alias Circuits.GPIO
+  alias Ytm.PN532.Server, as: PN532Server
 
   require Logger
 
@@ -93,14 +100,14 @@ defmodule Ytm.CardButton.Server do
         {:circuits_gpio, %{ref: bus_name, value: 0}},
         %__MODULE__{bus_name: bus_name} = state
       ) do
-    {:noreply, maybe_broadcast_press(%{state | pressed: true})}
+    {:noreply, state |> set_pressed(true) |> maybe_broadcast_press()}
   end
 
   def handle_info(
         {:circuits_gpio, %{ref: bus_name, value: 1}},
         %__MODULE__{bus_name: bus_name} = state
       ) do
-    {:noreply, maybe_broadcast_release(%{state | pressed: false})}
+    {:noreply, state |> set_pressed(false) |> maybe_broadcast_release()}
   end
 
   def handle_info({:circuits_gpio, %{}}, state), do: {:noreply, state}
@@ -108,6 +115,7 @@ defmodule Ytm.CardButton.Server do
   @impl GenServer
   def terminate(_reason, state) do
     if state.gpio, do: GPIO.close(state.gpio)
+    PN532Server.hold_awake(state.bus_name, false)
     :ok
   end
 
@@ -116,7 +124,8 @@ defmodule Ytm.CardButton.Server do
       {:ok, gpio} ->
         Logger.info("connected")
         # Pull-up: the button reads 0 while held closed to ground.
-        %{state | gpio: gpio, status: :connected, error: nil, pressed: GPIO.read(gpio) == 0}
+        %{state | gpio: gpio, status: :connected, error: nil}
+        |> set_pressed(GPIO.read(gpio) == 0)
 
       {:error, reason} ->
         if state.status == :connected do
@@ -124,8 +133,15 @@ defmodule Ytm.CardButton.Server do
         end
 
         Process.send_after(self(), :retry_connect, @retry_interval_ms)
-        %{state | gpio: nil, status: :disconnected, error: reason}
+        PN532Server.hold_awake(state.bus_name, false)
+        %{state | gpio: nil, status: :disconnected, error: reason, pressed: false}
     end
+  end
+
+  # Records the button's level and holds the reader awake to match it.
+  defp set_pressed(state, pressed) do
+    PN532Server.hold_awake(state.bus_name, pressed)
+    %{state | pressed: pressed}
   end
 
   defp open_and_subscribe(pin, bus_name) do

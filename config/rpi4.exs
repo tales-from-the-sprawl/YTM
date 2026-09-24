@@ -15,7 +15,8 @@ config :vintage_net,
   ]
 
 # PN532 NFC readers on SPI0, one per chip-select. Low-power mode keeps idle
-# readers powered down (RF field off), since scans only run on a card-button press.
+# readers powered down (RF field off), since scans only run on a card-button press;
+# Ytm.CardButton.Server holds a reader awake while its button is pressed.
 config :ytm, Ytm.PN532.Supervisor, buses: ["spidev0.0", "spidev0.1"], low_power: true
 
 # Pull-up buttons that trigger when a card is inserted into the matching reader.
