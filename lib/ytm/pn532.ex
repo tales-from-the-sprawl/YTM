@@ -343,8 +343,8 @@ defmodule Ytm.PN532 do
   @doc """
   Reads the raw NDEF message from an NTAG21x tag's user memory, starting at
   page 4 and unwrapping the TLV block structure. Reads stop as soon as the
-  tag reports an out-of-bounds block (end of its memory) or the NDEF
-  message has been found.
+  TLVs read so far end in the Terminator TLV, or otherwise once the tag
+  reports an out-of-bounds block (end of its memory).
   """
   @spec ntag2xx_read_ndef(t()) :: {:ok, binary()} | {:error, error() | NDEF.reason()}
   def ntag2xx_read_ndef(pn532) do
@@ -384,9 +384,10 @@ defmodule Ytm.PN532 do
 
   The tag is re-selected first (failing with `:target_changed` if a
   different tag answers), since whatever ran since it was detected may have
-  left it unselected: `ntag2xx_read_ndef/1` reads until the tag NAKs an
-  out-of-bounds page, which drops an NTAG back to IDLE so every later write
-  is rejected, and `power_down/1` turns the RF field off entirely.
+  left it unselected: `ntag2xx_read_ndef/1` on a tag with no Terminator TLV
+  reads until the tag NAKs an out-of-bounds page, which drops an NTAG back
+  to IDLE so every later write is rejected, and `power_down/1` turns the RF
+  field off entirely.
 
   A failed write may leave the tag in a partially-written state; retry the
   whole write on failure rather than assuming partial success is safe to
@@ -567,9 +568,18 @@ defmodule Ytm.PN532 do
 
   defp read_pages(pn532, page, remaining, acc) do
     case ntag2xx_read_block(pn532, page) do
-      {:ok, data} -> read_pages(pn532, page + 1, remaining - 1, acc <> data)
-      {:error, {:mifare_status, _status}} -> {:ok, acc}
-      {:error, _reason} = error -> error
+      {:ok, data} ->
+        acc = acc <> data
+
+        if NDEF.tlv_terminated?(acc),
+          do: {:ok, acc},
+          else: read_pages(pn532, page + 1, remaining - 1, acc)
+
+      {:error, {:mifare_status, _status}} ->
+        {:ok, acc}
+
+      {:error, _reason} = error ->
+        error
     end
   end
 

@@ -54,6 +54,36 @@ defmodule Ytm.NDEFTest do
     end
   end
 
+  describe "tlv_terminated?/1" do
+    test "is true once the TLVs end in the terminator, ignoring trailing bytes" do
+      assert NDEF.tlv_terminated?(
+               <<0x01, 0x03, 0xA0, 0x0C, 0x34, 0x03, 0x02, 0xD1, 0x01, 0xFE, 0x00>>
+             )
+    end
+
+    test "skips null TLVs before the terminator" do
+      assert NDEF.tlv_terminated?(<<0x00, 0x00, 0xFE>>)
+    end
+
+    test "does not mistake a terminator byte inside a TLV value for the terminator" do
+      refute NDEF.tlv_terminated?(<<0x03, 0x04, 0xFE, 0xFE>>)
+    end
+
+    test "skips a TLV with a three-byte length" do
+      value = :binary.copy(<<0xAA>>, 300)
+      assert NDEF.tlv_terminated?(<<0x03, 0xFF, 300::big-16, value::binary, 0xFE>>)
+      refute NDEF.tlv_terminated?(<<0x03, 0xFF, 300::big-16, value::binary>>)
+    end
+
+    test "is false while the data runs out before the terminator" do
+      refute NDEF.tlv_terminated?(<<>>)
+      refute NDEF.tlv_terminated?(<<0x00, 0x00>>)
+      refute NDEF.tlv_terminated?(<<0x03>>)
+      refute NDEF.tlv_terminated?(<<0x03, 0x02, 0xD1, 0x01>>)
+      refute NDEF.tlv_terminated?(<<0x03, 0x02, 0xD1>>)
+    end
+  end
+
   describe "decode_records/1" do
     test "decodes a well-known Text record (short record, no id)" do
       message = <<0xD1, 0x01, 0x08, "T", 0x02, "en", "Hello">>

@@ -74,6 +74,29 @@ defmodule Ytm.NDEF do
   def decode(data) when is_binary(data), do: decode_tlv(data)
 
   @doc """
+  Whether `data` (TLV-encoded tag memory, as passed to `decode/1`) contains a
+  complete run of TLVs ending in the Terminator TLV, i.e. whether reading any
+  further memory is unnecessary. `false` if the data runs out first.
+  """
+  @spec tlv_terminated?(binary()) :: boolean()
+  def tlv_terminated?(<<@tlv_null, rest::binary>>), do: tlv_terminated?(rest)
+  def tlv_terminated?(<<@tlv_terminator, _rest::binary>>), do: true
+
+  def tlv_terminated?(<<_tag, @tlv_three_byte_length, length::big-16, rest::binary>>),
+    do: skip_terminated?(rest, length)
+
+  def tlv_terminated?(<<_tag, length, rest::binary>>), do: skip_terminated?(rest, length)
+  def tlv_terminated?(data) when is_binary(data), do: false
+
+  @spec skip_terminated?(binary(), non_neg_integer()) :: boolean()
+  defp skip_terminated?(data, length) when byte_size(data) >= length do
+    <<_skipped::binary-size(^length), rest::binary>> = data
+    tlv_terminated?(rest)
+  end
+
+  defp skip_terminated?(_data, _length), do: false
+
+  @doc """
   Parses a raw NDEF message (as returned by `decode/1`) into its records.
 
   Chunked records (`CF` flag set) are not supported and return
