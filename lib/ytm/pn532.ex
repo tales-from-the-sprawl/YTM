@@ -382,6 +382,12 @@ defmodule Ytm.PN532 do
   `NDEF.decode/1`) to a detected tag, dispatching on its SAK exactly like
   `read_ndef/3`.
 
+  The tag is re-selected first (failing with `:target_changed` if a
+  different tag answers), since whatever ran since it was detected may have
+  left it unselected: `ntag2xx_read_ndef/1` reads until the tag NAKs an
+  out-of-bounds page, which drops an NTAG back to IDLE so every later write
+  is rejected, and `power_down/1` turns the RF field off entirely.
+
   A failed write may leave the tag in a partially-written state; retry the
   whole write on failure rather than assuming partial success is safe to
   build on.
@@ -389,10 +395,12 @@ defmodule Ytm.PN532 do
   @spec write_ndef(t(), binary(), byte(), binary()) ::
           :ok | {:error, error() | mad_error() | write_error()}
   def write_ndef(pn532, uid, sak, message) do
-    if mifare_classic?(sak) do
-      mifare_classic_write_ndef(pn532, uid, message)
-    else
-      ntag2xx_write_ndef(pn532, message)
+    with :ok <- reselect(pn532, uid) do
+      if mifare_classic?(sak) do
+        mifare_classic_write_ndef(pn532, uid, message)
+      else
+        ntag2xx_write_ndef(pn532, message)
+      end
     end
   end
 
