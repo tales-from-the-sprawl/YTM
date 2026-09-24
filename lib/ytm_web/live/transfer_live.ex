@@ -3,6 +3,7 @@ defmodule YtmWeb.TransferLive do
   alias Ytm.CardButton.Server, as: CardButtonServer
   alias Ytm.Finance
   alias Ytm.PN532.Server, as: PN532Server
+  require Logger
 
   @bus_names ["spidev0.0", "spidev0.1"]
   @read_attempts 8
@@ -66,9 +67,13 @@ defmodule YtmWeb.TransferLive do
 
   attr :card, :any,
     default: nil,
-    doc: "the parsed `Ytm.Finance.card/0`, or `nil` if unread/unrecognised"
+    doc:
+      "the parsed `Ytm.Finance.card/0`, or the read status: `:reading`, `:not_found` " <>
+        "(no tag detected), `:unknown` (tag detected but not recognised) or `nil` if unread"
 
-  attr :default, :atom, values: [:cred, :sin], doc: "shape to show until a card has been read"
+  attr :default, :atom,
+    values: [:unknown, :cred, :sin],
+    doc: "shape to show until a card has been read"
 
   # Shows the slot's card as whichever type was actually read from it, falling
   # back to the slot's default shape while empty, still being read, or unrecognised.
@@ -76,7 +81,7 @@ defmodule YtmWeb.TransferLive do
     assigns = assign(assigns, :type, card_type(assigns.card, assigns.default))
 
     ~H"""
-    <.prompt :if={@type == :unknown} class={@class} active={@active} />
+    <.prompt :if={@type == :unknown} class={@class} active={@active} status={@card} />
     <.cred_stick :if={@type == :cred} class={@class} active={@active} />
     <.sin_card :if={@type == :sin} class={@class} active={@active} />
     """
@@ -127,6 +132,7 @@ defmodule YtmWeb.TransferLive do
 
   attr :class, :string, default: nil
   attr :active, :boolean, default: false
+  attr :status, :atom, values: [nil, :reading, :not_found, :unknown], default: nil
 
   defp prompt(assigns) do
     ~H"""
@@ -138,7 +144,15 @@ defmodule YtmWeb.TransferLive do
           class="size-14 animate-[bounce_1.5s_infinite]"
         />
       </div>
-      <div :if={@active} class="flex flex-col gap-4 items-center text-warning">
+      <div :if={@active and @status in [nil, :reading]} class="flex flex-col gap-4 items-center">
+        <span>Reading card</span>
+        <.icon name="hero-arrow-path" class="size-14 animate-spin" />
+      </div>
+      <div :if={@active and @status == :not_found} class="flex flex-col gap-4 items-center text-error">
+        <span>No card found</span>
+        <.icon name="hero-x-circle" class="size-14" />
+      </div>
+      <div :if={@active and @status == :unknown} class="flex flex-col gap-4 items-center text-warning">
         <span>Unknown card</span>
         <.icon name="hero-exclamation-triangle" class="size-14" />
       </div>
@@ -211,7 +225,15 @@ defmodule YtmWeb.TransferLive do
     {:noreply, assign(socket, card_assign(bus_side(bus_name)), card)}
   end
 
-  def handle_async({:read_card, _bus_name}, {:exit, _reason}, socket) do
+  def handle_async({:read_card, bus_name}, {:exit, _reason}, socket) do
+    card_assign = card_assign(bus_side(bus_name))
+
+    # Only a read still in flight failed; a cancelled one was already reset.
+    socket =
+      if socket.assigns[card_assign] == :reading,
+        do: assign(socket, card_assign, :not_found),
+        else: socket
+
     {:noreply, socket}
   end
 
@@ -219,23 +241,35 @@ defmodule YtmWeb.TransferLive do
   # keypad input. Restarting an in-flight read replaces it.
   defp start_read(socket, bus_name) do
     socket
-    |> assign(card_assign(bus_side(bus_name)), nil)
+    |> assign(card_assign(bus_side(bus_name)), :reading)
     |> start_async({:read_card, bus_name}, fn -> read_card(bus_name, @read_attempts) end)
   end
 
   # The button closes slightly before the card is seated over the antenna, so
-  # retry a few times before giving up and treating the card as unrecognised.
+  # retry a few times before giving up. Gives up with `:not_found` if the last
+  # attempt detected no tag at all, or `:unknown` if it found one it couldn't decode.
   defp read_card(bus_name, attempts_left) do
-    with {:ok, {_uid, _sak, ndef}} <- PN532Server.scan(bus_name),
-         {:ok, card} <- Finance.decode_card(ndef) do
-      card
-    else
-      _error when attempts_left > 1 ->
-        Process.sleep(@read_retry_interval_ms)
-        read_card(bus_name, attempts_left - 1)
+    result =
+      with {:ok, {_uid, _sak, ndef}} <- PN532Server.scan(bus_name) do
+        case Finance.decode_card(ndef) do
+          {:ok, card} ->
+            card
 
-      _error ->
-        nil
+          {:error, reason} ->
+            Logger.warning("Card decode failed: #{inspect(reason)}")
+            :unknown
+        end
+      else
+        error ->
+          Logger.warning("No card found: #{inspect(error)}")
+          :not_found
+      end
+
+    if result in [:not_found, :unknown] and attempts_left > 1 do
+      Process.sleep(@read_retry_interval_ms)
+      read_card(bus_name, attempts_left - 1)
+    else
+      result
     end
   end
 

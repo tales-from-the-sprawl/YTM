@@ -120,10 +120,18 @@ tags (NFC Forum Type 2, SAK `0x00`) are read via unauthenticated paged reads sta
 Mifare Classic-compliant tags (SAK bit 3 set, e.g. `0x08` for Classic 1K) go through
 `mifare_classic_read_ndef/2`, which authenticates sector 0 with the well-known MAD key
 (`A0A1A2A3A4A5`) to parse the MAD (Mifare Application Directory) for sectors marked with the NDEF
-application id, then authenticates and reads each of those sectors with the well-known NDEF key
-(`D3F7D3F7D3F7`), skipping trailer blocks. Only the single-MAD, 16-sector Classic 1K layout is
+application id, then authenticates and reads those sectors with the well-known NDEF key
+(`D3F7D3F7D3F7`), skipping trailer blocks and stopping as soon as the NDEF TLV is complete. A failed
+MAD/sector read is retried after re-selecting the card, since an RF error drops a Classic card's
+authenticated state. Only the single-MAD, 16-sector Classic 1K layout is
 supported (no MAD2/4K). `Ytm.NDEF` (`lib/ytm/ndef.ex`) then unwraps the NFC Forum Type 2 Tag TLV
 block structure and decodes NDEF records, with helpers for the well-known Text and URI types.
+
+`open/2` also applies tuned 106 kbps Type A analog settings (`configure_analog/1`: 43 dB RX gain,
+raised RxThreshold MinLevel). With the chip defaults, the weakly-coupled Mifare Classic card on
+`spidev0.1` hit frequent RF CRC errors (status `0x02`) on block reads; gain alone overdrove the
+NTAG on `spidev0.0` (status `0x0B`). One setting has to work for both card types in either reader,
+so re-verify both readers on hardware if you change it.
 
 Note that a card's SAK alone doesn't guarantee which key scheme a Classic-compliant tag actually
 uses — `A0A1A2A3A4A5`/`D3F7D3F7D3F7` are just the NFC Forum/NXP-documented defaults for

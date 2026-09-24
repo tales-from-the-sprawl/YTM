@@ -33,6 +33,7 @@ defmodule Ytm.PN532 do
   @command_get_firmware_version 0x02
   @command_sam_configuration 0x14
   @command_power_down 0x16
+  @command_rf_configuration 0x32
   @command_in_list_passive_target 0x4A
   @command_in_data_exchange 0x40
 
@@ -47,6 +48,21 @@ defmodule Ytm.PN532 do
 
   @mifare_iso14443a 0x00
   @mifare_classic_sak_mask 0x08
+
+  # RFConfiguration CfgItem 0x0A: the 11 CIU analog registers used for
+  # 106 kbps Type A, in order CIU_RFCfg, GsNOn, CWGsP, ModGsP, DemodOwnRfOn,
+  # RxThreshold, DemodOwnRfOff, GsNOff, ModWidth, MifNFC, TxBitPhase. These
+  # are the UM0701-02 §7.3.1 defaults except for two receiver registers,
+  # tuned so both a weakly-coupled Mifare Classic card and a strongly-coupled
+  # NTAG read reliably with the same setting (see `configure_analog/1`):
+  # * CIU_RFCfg `0x69` (default `0x59`): RxGain 43 dB instead of 38 dB.
+  # * CIU_RxThreshold `0xC5` (default `0x85`): MinLevel 0xC instead of 0x8.
+  @rf_cfg_item_analog_106_type_a 0x0A
+  @analog_106_type_a <<0x69, 0xF4, 0x3F, 0x11, 0x4D, 0xC5, 0x61, 0x6F, 0x26, 0x62, 0x87>>
+
+  # Attempts per Mifare Classic sector (or MAD) read before giving up; each
+  # retry re-selects the card first, since an RF error drops its crypto state.
+  @classic_read_attempts 3
 
   @default_timeout_ms 1000
   @firmware_timeout_ms 500
@@ -64,6 +80,7 @@ defmodule Ytm.PN532 do
   @type mad_error ::
           :mad_authentication_failed
           | :no_ndef_sectors
+          | :target_changed
           | {:sector_authentication_failed, byte()}
 
   @type write_error :: {:sector_write_failed, byte()} | :write_failed | :message_too_large
@@ -89,6 +106,7 @@ defmodule Ytm.PN532 do
          :ok <- reset(pn532),
          :ok <- SPI.wakeup(spi),
          :ok <- sam_configuration(pn532),
+         :ok <- configure_analog(pn532),
          {:ok, _version} <- firmware_version(pn532) do
       {:ok, pn532}
     end
@@ -112,6 +130,28 @@ defmodule Ytm.PN532 do
   def sam_configuration(pn532) do
     with {:ok, _response} <-
            call_function(pn532, @command_sam_configuration, <<0x01, 0x14, 0x01>>, 0) do
+      :ok
+    end
+  end
+
+  @doc """
+  Applies this driver's tuned 106 kbps Type A analog settings (RFConfiguration
+  item `0x0A`, UM0701-02 §7.3.1). Called by `open/2`.
+
+  With the chip defaults (38 dB receiver gain), a card that couples weakly to
+  its antenna is still detected and authenticated, but longer responses like
+  16-byte block reads intermittently fail with an RF CRC error (status
+  `0x02`), which on Mifare Classic also drops the card's authenticated state.
+  Raising the gain to 43 dB alone fixes that but overdrives a
+  strongly-coupled card (RF protocol errors, status `0x0B`); raising the
+  receiver's MinLevel threshold alongside it suppresses that again, so one
+  setting works for both.
+  """
+  @spec configure_analog(t()) :: :ok | {:error, error()}
+  def configure_analog(pn532) do
+    params = <<@rf_cfg_item_analog_106_type_a, @analog_106_type_a::binary>>
+
+    with {:ok, _response} <- call_function(pn532, @command_rf_configuration, params, 0) do
       :ok
     end
   end
@@ -287,16 +327,20 @@ defmodule Ytm.PN532 do
   NDEF application id (`03E1`), then authenticates and reads each of those
   sectors' 3 data blocks (skipping the trailer block that holds keys/access
   bits) with the well-known NDEF key A (`D3F7D3F7D3F7`), concatenating them
-  in ascending sector order before unwrapping the TLV block structure.
+  in ascending sector order and unwrapping the TLV block structure. Reading
+  stops at the first sector that completes the NDEF message, rather than
+  reading every sector the MAD lists.
+
+  A failed MAD or sector read (e.g. an RF CRC error) is retried a few times,
+  re-selecting the card first to restore its authenticated state.
 
   Only the single-MAD, 16-sector Mifare Classic 1K layout is supported.
   """
   @spec mifare_classic_read_ndef(t(), binary()) ::
           {:ok, binary()} | {:error, error() | NDEF.reason() | mad_error()}
   def mifare_classic_read_ndef(pn532, uid) do
-    with {:ok, sectors} <- read_mad_ndef_sectors(pn532, uid),
-         {:ok, data} <- read_ndef_sectors(pn532, uid, sectors) do
-      NDEF.decode(data)
+    with {:ok, sectors} <- read_mad_ndef_sectors(pn532, uid) do
+      read_ndef_sectors(pn532, uid, Enum.sort(sectors), <<>>)
     end
   end
 
@@ -378,6 +422,12 @@ defmodule Ytm.PN532 do
   @spec read_mad_ndef_sectors(t(), binary()) ::
           {:ok, [byte()]} | {:error, error() | :mad_authentication_failed}
   defp read_mad_ndef_sectors(pn532, uid) do
+    with_reselect_retry(pn532, uid, @classic_read_attempts, fn -> read_mad(pn532, uid) end)
+  end
+
+  @spec read_mad(t(), binary()) ::
+          {:ok, [byte()]} | {:error, error() | :mad_authentication_failed}
+  defp read_mad(pn532, uid) do
     with {:ok, true} <-
            mifare_classic_authenticate_block(pn532, uid, @mad_sector_block, 0, @mad_key_a),
          {:ok, block1} <- mifare_classic_read_block(pn532, @mad_sector_block),
@@ -402,19 +452,49 @@ defmodule Ytm.PN532 do
   defp aid_pairs(<<aid::binary-size(2), rest::binary>>), do: [aid | aid_pairs(rest)]
   defp aid_pairs(<<>>), do: []
 
-  @spec read_ndef_sectors(t(), binary(), [byte()]) ::
-          {:ok, binary()} | {:error, error() | mad_error()}
-  defp read_ndef_sectors(_pn532, _uid, []), do: {:error, :no_ndef_sectors}
+  @spec read_ndef_sectors(t(), binary(), [byte()], binary()) ::
+          {:ok, binary()} | {:error, error() | NDEF.reason() | mad_error()}
+  defp read_ndef_sectors(_pn532, _uid, [], <<>>), do: {:error, :no_ndef_sectors}
+  defp read_ndef_sectors(_pn532, _uid, [], acc), do: NDEF.decode(acc)
 
-  defp read_ndef_sectors(pn532, uid, sectors) do
-    sectors
-    |> Enum.sort()
-    |> Enum.reduce_while({:ok, <<>>}, fn sector, {:ok, acc} ->
-      case read_ndef_sector(pn532, uid, sector) do
-        {:ok, data} -> {:cont, {:ok, acc <> data}}
-        error -> {:halt, error}
+  defp read_ndef_sectors(pn532, uid, [sector | rest], acc) do
+    read = fn -> read_ndef_sector(pn532, uid, sector) end
+
+    with {:ok, data} <- with_reselect_retry(pn532, uid, @classic_read_attempts, read) do
+      acc = acc <> data
+
+      case NDEF.decode(acc) do
+        {:ok, message} -> {:ok, message}
+        {:error, _incomplete} -> read_ndef_sectors(pn532, uid, rest, acc)
       end
-    end)
+    end
+  end
+
+  # Runs `fun`, re-selecting the card and retrying on failure: after an RF
+  # error mid-transaction a Mifare Classic card is no longer authenticated
+  # (every later command fails), so the retry needs a fresh selection.
+  @spec with_reselect_retry(t(), binary(), pos_integer(), (-> result)) ::
+          result | {:error, error() | :no_target_found | :target_changed}
+        when result: {:ok, term()} | {:error, term()}
+  defp with_reselect_retry(pn532, uid, attempts, fun) do
+    case fun.() do
+      {:error, _reason} when attempts > 1 ->
+        with :ok <- reselect(pn532, uid) do
+          with_reselect_retry(pn532, uid, attempts - 1, fun)
+        end
+
+      result ->
+        result
+    end
+  end
+
+  @spec reselect(t(), binary()) :: :ok | {:error, term()}
+  defp reselect(pn532, uid) do
+    case read_passive_target(pn532) do
+      {:ok, {^uid, _sak}} -> :ok
+      {:ok, {_other_uid, _sak}} -> {:error, :target_changed}
+      error -> error
+    end
   end
 
   @spec read_ndef_sector(t(), binary(), byte()) ::
