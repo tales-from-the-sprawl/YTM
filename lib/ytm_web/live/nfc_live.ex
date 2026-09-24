@@ -44,7 +44,7 @@ defmodule YtmWeb.NFCLive do
                 <span>{inspect(bus.error)}</span>
               </div>
 
-              <div class="card-actions mt-2">
+              <div class="card-actions mt-2 items-center">
                 <button
                   :if={bus.status == :open}
                   phx-click="scan"
@@ -53,6 +53,15 @@ defmodule YtmWeb.NFCLive do
                 >
                   <.icon name="hero-credit-card" class="size-4" /> Scan for Card
                 </button>
+                <label class="label cursor-pointer gap-2 ml-auto text-sm">
+                  <input
+                    type="checkbox"
+                    class="toggle toggle-sm"
+                    checked={bus.low_power}
+                    phx-click="toggle_low_power"
+                    phx-value-bus={bus_name}
+                  /> Low power
+                </label>
               </div>
 
               <div :if={bus.firmware_version} class="text-xs opacity-70 font-mono mt-2">
@@ -163,6 +172,10 @@ defmodule YtmWeb.NFCLive do
     {:noreply, update_bus(socket, bus_name, &scan_bus(bus_name, &1))}
   end
 
+  def handle_event("toggle_low_power", %{"bus" => bus_name}, socket) do
+    {:noreply, update_bus(socket, bus_name, &toggle_low_power(bus_name, &1))}
+  end
+
   def handle_event("write", %{"bus" => bus_name, "text" => text}, socket) do
     {:noreply, update_bus(socket, bus_name, &write_bus(bus_name, &1, text))}
   end
@@ -204,21 +217,28 @@ defmodule YtmWeb.NFCLive do
     end
   end
 
-  defp bus_from_status({:connected, firmware_version, _error}) do
-    %{status: :open, error: nil, firmware_version: firmware_version, scan: nil, write_result: nil}
+  @empty_bus %{
+    status: :closed,
+    error: nil,
+    firmware_version: nil,
+    low_power: false,
+    scan: nil,
+    write_result: nil
+  }
+
+  defp bus_from_status({:connected, firmware_version, _error, low_power}) do
+    %{@empty_bus | status: :open, firmware_version: firmware_version, low_power: low_power}
   end
 
-  defp bus_from_status({:disconnected, _firmware_version, nil}) do
-    %{status: :closed, error: nil, firmware_version: nil, scan: nil, write_result: nil}
+  defp bus_from_status({:disconnected, _firmware_version, nil, low_power}) do
+    %{@empty_bus | low_power: low_power}
   end
 
-  defp bus_from_status({:disconnected, _firmware_version, reason}) do
-    %{status: :error, error: reason, firmware_version: nil, scan: nil, write_result: nil}
+  defp bus_from_status({:disconnected, _firmware_version, reason, low_power}) do
+    %{@empty_bus | status: :error, error: reason, low_power: low_power}
   end
 
-  defp bus_from_status({:error, :not_started}) do
-    %{status: :closed, error: nil, firmware_version: nil, scan: nil, write_result: nil}
-  end
+  defp bus_from_status({:error, :not_started}), do: @empty_bus
 
   defp update_bus(socket, bus_name, fun) do
     assign(socket, :buses, Map.update!(socket.assigns.buses, bus_name, fun))
@@ -235,6 +255,14 @@ defmodule YtmWeb.NFCLive do
   end
 
   defp scan_bus(_bus_name, bus), do: bus
+
+  defp toggle_low_power(bus_name, bus) do
+    case PN532Server.set_low_power(bus_name, not bus.low_power) do
+      :ok -> %{bus | low_power: not bus.low_power}
+      # A failed wake-up drops the connection, so show the server's new state.
+      {:error, _reason} -> bus_from_status(PN532Server.status(bus_name))
+    end
+  end
 
   defp write_bus(bus_name, %{status: :open, scan: {:ok, uid, sak, _ndef}} = bus, text) do
     message = text |> NDEF.encode_text() |> List.wrap() |> NDEF.encode_records()

@@ -14,8 +14,9 @@ config :vintage_net,
     {"wlan0", %{type: VintageNetWiFi}}
   ]
 
-# PN532 NFC readers on SPI0, one per chip-select.
-config :ytm, Ytm.PN532.Supervisor, buses: ["spidev0.0", "spidev0.1"]
+# PN532 NFC readers on SPI0, one per chip-select. Low-power mode keeps idle
+# readers powered down (RF field off), since scans only run on a card-button press.
+config :ytm, Ytm.PN532.Supervisor, buses: ["spidev0.0", "spidev0.1"], low_power: true
 
 # Pull-up buttons that trigger when a card is inserted into the matching reader.
 config :ytm, Ytm.CardButton.Supervisor, buttons: [{4, "spidev0.0"}, {17, "spidev0.1"}]

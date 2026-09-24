@@ -9,6 +9,11 @@ defmodule Ytm.PN532.Server do
   just serializes access to the bus and keeps the connection alive.
   Reconnection is always-on and has no manual override — a bus that goes
   away (unplugged, or a crash) is retried on `@retry_interval_ms` forever.
+
+  In low-power mode (the `:low_power` start option, or `set_low_power/2` at
+  runtime) the reader is kept in `Ytm.PN532.power_down/1` whenever it's idle,
+  with its RF field off, and woken just for the duration of each request.
+  A reader that fails to wake up is treated as a lost connection.
   """
 
   use GenServer
@@ -28,7 +33,9 @@ defmodule Ytm.PN532.Server do
           pn532: PN532.t() | nil,
           status: status(),
           error: term(),
-          firmware_version: {byte(), byte(), byte(), byte()} | nil
+          firmware_version: {byte(), byte(), byte(), byte()} | nil,
+          low_power: boolean(),
+          asleep: boolean()
         }
 
   @enforce_keys [:bus_name]
@@ -36,18 +43,34 @@ defmodule Ytm.PN532.Server do
             pn532: nil,
             status: :disconnected,
             error: nil,
-            firmware_version: nil
+            firmware_version: nil,
+            low_power: false,
+            asleep: false
 
-  @spec start_link(String.t()) :: GenServer.on_start()
-  def start_link(bus_name) when is_binary(bus_name) do
-    GenServer.start_link(__MODULE__, bus_name, name: via(bus_name))
+  @doc """
+  `opts`:
+  * `:low_power` - start in low-power mode (see the moduledoc), defaults to `false`.
+  """
+  @spec start_link(String.t(), keyword()) :: GenServer.on_start()
+  def start_link(bus_name, opts \\ []) when is_binary(bus_name) do
+    GenServer.start_link(__MODULE__, {bus_name, opts}, name: via(bus_name))
   end
 
-  @doc "Current connection status, cached firmware version, and last error (if any)."
+  @doc "Current connection status, cached firmware version, last error (if any), and whether low-power mode is on."
   @spec status(String.t()) ::
-          {status(), firmware_version :: {byte(), byte(), byte(), byte()} | nil, error :: term()}
+          {status(), firmware_version :: {byte(), byte(), byte(), byte()} | nil, error :: term(),
+           low_power :: boolean()}
           | {:error, :not_started}
   def status(bus_name), do: call(bus_name, :status, @status_call_timeout)
+
+  @doc """
+  Turns low-power mode on or off. Takes effect immediately: the reader is
+  powered down (or woken) right away if it's connected and idle.
+  """
+  @spec set_low_power(String.t(), boolean()) :: :ok | {:error, :not_started | term()}
+  def set_low_power(bus_name, enabled) when is_boolean(enabled) do
+    call(bus_name, {:set_low_power, enabled}, @status_call_timeout)
+  end
 
   @doc "Waits for a passive target and reads its NDEF message, mirroring the driver's own composition."
   @spec scan(String.t()) ::
@@ -71,9 +94,10 @@ defmodule Ytm.PN532.Server do
   defp via(bus_name), do: {:via, Registry, {Ytm.PN532.Registry, bus_name}}
 
   @impl GenServer
-  def init(bus_name) do
+  def init({bus_name, opts}) do
     Logger.metadata(pn532_bus: bus_name)
-    {:ok, %__MODULE__{bus_name: bus_name}, {:continue, :connect}}
+    low_power = Keyword.get(opts, :low_power, false)
+    {:ok, %__MODULE__{bus_name: bus_name, low_power: low_power}, {:continue, :connect}}
   end
 
   @impl GenServer
@@ -84,7 +108,25 @@ defmodule Ytm.PN532.Server do
 
   @impl GenServer
   def handle_call(:status, _from, state) do
-    {:reply, {state.status, state.firmware_version, state.error}, state}
+    {:reply, {state.status, state.firmware_version, state.error, state.low_power}, state}
+  end
+
+  def handle_call({:set_low_power, enabled}, _from, %__MODULE__{status: :disconnected} = state) do
+    {:reply, :ok, %{state | low_power: enabled}}
+  end
+
+  def handle_call({:set_low_power, true}, _from, state) do
+    state = %{state | low_power: true}
+    {:reply, :ok, if(state.asleep, do: state, else: power_down(state))}
+  end
+
+  def handle_call({:set_low_power, false}, _from, state) do
+    state = %{state | low_power: false}
+
+    case wake_up(state) do
+      {:ok, state} -> {:reply, :ok, state}
+      {:error, reason, state} -> {:reply, {:error, reason}, state}
+    end
   end
 
   def handle_call(_message, _from, %__MODULE__{status: :disconnected} = state) do
@@ -92,22 +134,62 @@ defmodule Ytm.PN532.Server do
   end
 
   def handle_call(:scan, _from, state) do
-    result =
-      with {:ok, {uid, sak}} <- PN532.read_passive_target(state.pn532) do
-        {:ok, {uid, sak, PN532.read_ndef(state.pn532, uid, sak)}}
+    with_awake(state, fn pn532 ->
+      with {:ok, {uid, sak}} <- PN532.read_passive_target(pn532) do
+        {:ok, {uid, sak, PN532.read_ndef(pn532, uid, sak)}}
       end
-
-    {:reply, result, state}
+    end)
   end
 
   def handle_call({:write_ndef, uid, sak, message}, _from, state) do
-    {:reply, PN532.write_ndef(state.pn532, uid, sak, message), state}
+    with_awake(state, &PN532.write_ndef(&1, uid, sak, message))
   end
 
   @impl GenServer
   def terminate(_reason, state) do
     if state.pn532, do: PN532.close(state.pn532)
     :ok
+  end
+
+  # Runs `fun` against a woken-up reader and replies with its result, powering
+  # the reader back down afterwards if low-power mode is on.
+  defp with_awake(state, fun) do
+    case wake_up(state) do
+      {:ok, state} ->
+        result = fun.(state.pn532)
+        state = if state.low_power, do: power_down(state), else: state
+        {:reply, result, state}
+
+      {:error, reason, state} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp wake_up(%__MODULE__{asleep: false} = state), do: {:ok, state}
+
+  defp wake_up(state) do
+    case PN532.wake_up(state.pn532) do
+      :ok ->
+        {:ok, %{state | asleep: false}}
+
+      {:error, reason} ->
+        Logger.warning("failed to wake up: #{inspect(reason)}")
+        PN532.close(state.pn532)
+        {:error, reason, attempt_connect(%{state | asleep: false})}
+    end
+  end
+
+  # A reader that refuses to power down is left awake rather than treated as
+  # disconnected: it still works, it just doesn't save power.
+  defp power_down(state) do
+    case PN532.power_down(state.pn532) do
+      :ok ->
+        %{state | asleep: true}
+
+      {:error, reason} ->
+        Logger.warning("failed to power down: #{inspect(reason)}")
+        %{state | asleep: false}
+    end
   end
 
   defp attempt_connect(state) do
@@ -121,13 +203,15 @@ defmodule Ytm.PN532.Server do
             {:error, _reason} -> nil
           end
 
-        %{
+        state = %{
           state
           | pn532: pn532,
             status: :connected,
             error: nil,
             firmware_version: firmware_version
         }
+
+        if state.low_power, do: power_down(state), else: state
 
       {:error, reason} ->
         if state.status == :connected do

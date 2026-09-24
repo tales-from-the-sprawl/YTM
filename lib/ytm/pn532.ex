@@ -27,6 +27,7 @@ defmodule Ytm.PN532 do
           :timeout
           | :bad_ack
           | :unexpected_response
+          | {:power_down_rejected, status :: byte()}
           | Frame.reason()
           | {:spi_error, any()}
 
@@ -63,6 +64,14 @@ defmodule Ytm.PN532 do
   # Attempts per Mifare Classic sector (or MAD) read before giving up; each
   # retry re-selects the card first, since an RF error drops its crypto state.
   @classic_read_attempts 3
+
+  # PowerDown WakeUpEnable bitmask (UM0701-02 §7.2.11): only SPI (bit 5) is
+  # wired, so only an SPI chip-select edge should wake the chip.
+  @wakeup_enable_spi 0x20
+  # The chip only enters power-down ~1 ms after sending the PowerDown
+  # response, and a wake edge before that is lost (the next command then
+  # times out), measured on hardware as failing at 1 ms and working at 2 ms.
+  @power_down_settle_ms 10
 
   @default_timeout_ms 1000
   @firmware_timeout_ms 500
@@ -156,12 +165,36 @@ defmodule Ytm.PN532 do
     end
   end
 
-  @doc "Requests a soft power-down, with wakeup enabled on SPI. Returns whether the chip accepted it."
-  @spec power_down(t()) :: {:ok, boolean()} | {:error, error()}
+  @doc """
+  Puts the PN532 into soft power-down (UM0701-02 §7.2.11): the RF field and
+  oscillator stop, and only an SPI chip-select edge wakes it again.
+
+  Call `wake_up/1` before issuing any other command. Returns only once the
+  chip has actually entered power-down, so a following `wake_up/1` can't
+  race it.
+  """
+  @spec power_down(t()) :: :ok | {:error, error()}
   def power_down(pn532) do
     with {:ok, <<status, _rest::binary>>} <-
-           call_function(pn532, @command_power_down, <<0xB0, 0x00>>, 1) do
-      {:ok, status == 0}
+           call_function(pn532, @command_power_down, <<@wakeup_enable_spi, 0x00>>, 1) do
+      if status == 0 do
+        Process.sleep(@power_down_settle_ms)
+        :ok
+      else
+        {:error, {:power_down_rejected, status}}
+      end
+    end
+  end
+
+  @doc """
+  Wakes the PN532 from `power_down/1` and re-applies the SAM and analog
+  settings from `open/2`, leaving it ready for commands again.
+  """
+  @spec wake_up(t()) :: :ok | {:error, error()}
+  def wake_up(pn532) do
+    with :ok <- SPI.wakeup(pn532.spi),
+         :ok <- sam_configuration(pn532) do
+      configure_analog(pn532)
     end
   end
 

@@ -135,6 +135,13 @@ setting has to work for both card types in either reader, so re-verify both read
 you change it. `spidev0.1` can't detect the NTAG at all, at any setting: that's a hardware/antenna
 limit, not something the receiver settings can fix.
 
+`power_down/1` puts the chip into soft power-down (RF field off, woken only by SPI chip-select) and
+`wake_up/1` wakes it and re-applies the SAM/analog settings. `power_down/1` sleeps ~10 ms after the
+chip accepts: a wake edge within ~1 ms of the PowerDown response is lost (measured on hardware) and
+the next command times out. `Ytm.PN532.Server` has an opt-in low-power mode (`low_power: true` in
+the `Ytm.PN532.Supervisor` config, or `set_low_power/2`) that keeps idle readers powered down and
+wakes them per request.
+
 Note that a card's SAK alone doesn't guarantee which key scheme a Classic-compliant tag actually
 uses — `A0A1A2A3A4A5`/`D3F7D3F7D3F7` are just the NFC Forum/NXP-documented defaults for
 MAD+NDEF-formatted cards, not something the protocol enforces.
