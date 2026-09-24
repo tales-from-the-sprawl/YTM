@@ -128,10 +128,12 @@ supported (no MAD2/4K). `Ytm.NDEF` (`lib/ytm/ndef.ex`) then unwraps the NFC Foru
 block structure and decodes NDEF records, with helpers for the well-known Text and URI types.
 
 `open/2` also applies tuned 106 kbps Type A analog settings (`configure_analog/1`: 43 dB RX gain,
-raised RxThreshold MinLevel). With the chip defaults, the weakly-coupled Mifare Classic card on
-`spidev0.1` hit frequent RF CRC errors (status `0x02`) on block reads; gain alone overdrove the
-NTAG on `spidev0.0` (status `0x0B`). One setting has to work for both card types in either reader,
-so re-verify both readers on hardware if you change it.
+raised RxThreshold MinLevel). With the chip defaults, the reader on `spidev0.1` (whose RF coupling
+to its card slot is much weaker than `spidev0.0`'s) hit frequent RF CRC errors (status `0x02`) on
+Mifare Classic block reads; gain alone overdrove an NTAG on `spidev0.0` (status `0x0B`). One
+setting has to work for both card types in either reader, so re-verify both readers on hardware if
+you change it. `spidev0.1` can't detect the NTAG at all, at any setting: that's a hardware/antenna
+limit, not something the receiver settings can fix.
 
 Note that a card's SAK alone doesn't guarantee which key scheme a Classic-compliant tag actually
 uses — `A0A1A2A3A4A5`/`D3F7D3F7D3F7` are just the NFC Forum/NXP-documented defaults for
