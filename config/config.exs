@@ -29,10 +29,6 @@ config :mix_tasks_upload_hotswap,
   nodes: [:"ytm@nerves.local"],
   cookie: :nerves_is_awesome
 
-# tzdata (needed by fledex) would otherwise periodically download new
-# timezone data into its priv dir, which is read-only on Nerves.
-config :tzdata, :autoupdate, :disabled
-
 import_config "phoenix/config.exs"
 
 if Mix.target() == :host do

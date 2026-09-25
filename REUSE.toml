@@ -10,7 +10,8 @@ path = [
  "priv/**",
  "rootfs_overlay/**",
  "REUSE.toml",
- "test/**"
+ "test/**",
+ "vendor/**"
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "None"

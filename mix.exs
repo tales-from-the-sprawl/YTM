@@ -84,9 +84,8 @@ defmodule Ytm.MixProject do
       {:dbus, "~> 0.8"},
       {:req, "~> 0.7"},
       {:fledex, "~> 0.8.0"},
-      # Optional dep of fledex, but fledex_scheduler lists it in extra_applications,
-      # so it has to be present for the app to start.
-      {:tzdata, "~> 1.1"},
+      # Empty stand-in for fledex's optional tzdata dep, see its mix.exs.
+      {:tzdata, path: "vendor/tzdata_stub", override: true},
 
       # Allow Nerves.Runtime on host to support development, testing and CI.
       # See config/host.exs for usage.
@@ -126,9 +125,33 @@ defmodule Ytm.MixProject do
       # See https://nerves-pack.hexdocs.pm/readme.html#erlang-distribution
       cookie: "#{@app}_cookie",
       include_erts: &Nerves.Release.erts/0,
-      steps: [&Nerves.Release.init/1, :assemble],
+      steps: [&Nerves.Release.init/1, :assemble, &slim_fledex/1],
       strip_beams: Mix.env() == :prod or [keep: ["Docs"]]
     ]
+  end
+
+  # Slims fledex down in the release, since the firmware is right at its rootfs size
+  # limit:
+  # * its hex package accidentally ships its dialyzer PLTs (~11 MB) and a tzdata
+  #   database (~3 MB) in priv/, which nothing reads at runtime.
+  # * its beams are ~2.5 MB of `Docs` chunks (mostly the color-name modules),
+  #   which `strip_beams` keeps in dev builds.
+  defp slim_fledex(release) do
+    fledex_dir = Path.join(release.path, "lib/fledex-*")
+
+    fledex_dir
+    |> Path.join("priv/{plts,tzdata}")
+    |> Path.wildcard()
+    |> Enum.each(&File.rm_rf!/1)
+
+    {:ok, _stripped} =
+      fledex_dir
+      |> Path.join("ebin/*.beam")
+      |> Path.wildcard()
+      |> Enum.map(&String.to_charlist/1)
+      |> :beam_lib.strip_files()
+
+    release
   end
 
   defp phoenix_deps() do
