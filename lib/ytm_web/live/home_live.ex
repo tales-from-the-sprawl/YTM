@@ -133,7 +133,7 @@ defmodule YtmWeb.HomeLive do
       <div class="px-4 py-10 sm:px-6 sm:py-12 lg:px-8 xl:px-28 xl:py-16">
         <div class="mx-auto max-w-6xl">
           <div class="text-center mb-16">
-            <div class="inline-block bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl px-8 py-12 mb-6 shadow-lg">
+            <div class="inline-block bg-linear-to-r from-indigo-600 to-purple-600 rounded-3xl px-8 py-12 mb-6 shadow-lg">
               <h1 class="text-5xl font-bold text-white mb-3 tracking-tight">
                 Nerves Web Kiosk
               </h1>
