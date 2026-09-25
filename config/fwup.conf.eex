@@ -6,7 +6,7 @@
 # This is a project-local override of kiosk_system_rpi4's fwup.conf.eex
 # (copied verbatim from v2.1.2, the version pinned in mix.lock), needed only
 # to point the config.txt resource at our own config/config.txt and to ship
-# the extra overlays/spi1-1cs.dtbo it references. If kiosk_system_rpi4 is
+# the extra overlays/spi3-1cs.dtbo it references. If kiosk_system_rpi4 is
 # upgraded, re-diff this file against the new version's fwup.conf.eex and
 # reapply these two changes.
 #
@@ -47,9 +47,9 @@ file_resources = [
   %{name: "overlays/ramoops-pi4.dtbo", path: "${NERVES_SYSTEM}/images/ramoops-pi4-overlay.dtb"},
   %{name: "overlays/rpi-backlight.dtbo", path: "${NERVES_SYSTEM}/images/rpi-firmware/overlays/rpi-backlight.dtbo"},
   %{name: "overlays/rpi-ft5406.dtbo", path: "${NERVES_SYSTEM}/images/rpi-firmware/overlays/rpi-ft5406.dtbo"},
-  # Added for the spi1-1cs dtoverlay used by config/config.txt (second SPI
+  # Added for the spi3-1cs dtoverlay used by config/config.txt (second SPI
   # bus for the NeoPixel strip).
-  %{name: "overlays/spi1-1cs.dtbo", path: "${NERVES_SYSTEM}/images/rpi-firmware/overlays/spi1-1cs.dtbo"},
+  %{name: "overlays/spi3-1cs.dtbo", path: "${NERVES_SYSTEM}/images/rpi-firmware/overlays/spi3-1cs.dtbo"},
   %{name: "overlays/tc358743.dtbo", path: "${NERVES_SYSTEM}/images/rpi-firmware/overlays/tc358743.dtbo"},
   %{name: "overlays/vc4-kms-dsi-7inch.dtbo", path: "${NERVES_SYSTEM}/images/rpi-firmware/overlays/vc4-kms-dsi-7inch.dtbo"},
   %{name: "overlays/vc4-kms-dsi-ili9881-5inch.dtbo", path: "${NERVES_SYSTEM}/images/rpi-firmware/overlays/vc4-kms-dsi-ili9881-5inch.dtbo"},

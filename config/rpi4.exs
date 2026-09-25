@@ -1,6 +1,6 @@
 import Config
 
-# Override kiosk_system_rpi4's config.txt/fwup.conf to add the spi1-1cs
+# Override kiosk_system_rpi4's config.txt/fwup.conf to add the spi3-1cs
 # dtoverlay (second SPI bus, for the NeoPixel strip). See config/config.txt
 # and config/fwup.conf.eex.
 config :nerves, :firmware, fwup_conf: "config/fwup.conf"

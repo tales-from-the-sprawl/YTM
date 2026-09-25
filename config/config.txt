@@ -24,15 +24,17 @@ disable_splash=1
 # configuration. See Target packages->Hardware handling->Firmware.
 gpu_mem=192
 
-# Enable I2C and SPI
-dtparam=i2c_arm=on
+# Enable SPI. I2C (i2c_arm, I2C1 on GPIO 2/3) is left off because those pins
+# are taken by spi3 below.
+#dtparam=i2c_arm=on
 dtparam=spi=on
 
-# Second SPI bus (spi1, the Pi4's "mini SPI"/AUX controller) for the NeoPixel
-# strip. SPI0 (GPIO 7-11) is already used by the PN532 NFC readers, see
-# config/rpi4.exs. Fixed pins: MISO=GPIO19, MOSI=GPIO20, SCLK=GPIO21; CE0
-# defaults to GPIO18, creating /dev/spidev1.0.
-dtoverlay=spi1-1cs
+# Second SPI bus (spi3, one of the BCM2711's extra SPI controllers) for the
+# NeoPixel strip, driven from MOSI only. SPI0 (GPIO 7-11) is already used by
+# the PN532 NFC readers, see config/rpi4.exs. spi1 isn't used because its pins
+# (GPIO 18-21) conflict with other hardware. Fixed pins: MOSI=GPIO2 (header
+# pin 3), MISO=GPIO1, SCLK=GPIO3, CE0=GPIO0, creating /dev/spidev3.0.
+dtoverlay=spi3-1cs
 
 # Enable audio (loads snd_bcm3825)
 dtparam=audio=on
