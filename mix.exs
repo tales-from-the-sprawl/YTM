@@ -84,6 +84,9 @@ defmodule Ytm.MixProject do
       {:dbus, "~> 0.8"},
       {:req, "~> 0.7"},
       {:fledex, "~> 0.8.0"},
+      # Optional dep of fledex, but fledex_scheduler lists it in extra_applications,
+      # so it has to be present for the app to start.
+      {:tzdata, "~> 1.1"},
 
       # Allow Nerves.Runtime on host to support development, testing and CI.
       # See config/host.exs for usage.

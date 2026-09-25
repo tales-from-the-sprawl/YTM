@@ -21,3 +21,9 @@ config :ytm, Ytm.PN532.Supervisor, buses: ["spidev0.0", "spidev0.1"], low_power:
 
 # Pull-up buttons that trigger when a card is inserted into the matching reader.
 config :ytm, Ytm.CardButton.Supervisor, buttons: [{4, "spidev0.0"}, {17, "spidev0.1"}]
+
+# NeoPixel (WS2812) strip on SPI3 MOSI (GPIO2), see config/config.txt.
+config :ytm, Ytm.Leds,
+  driver: {Fledex.Driver.Impl.Spi.Ws2812, dev: "spidev3.0"},
+  count: 149,
+  brightness: 50
