@@ -5,14 +5,17 @@
 #
 # This is a project-local override of kiosk_system_rpi4's fwup.conf.eex
 # (copied verbatim from v2.1.2, the version pinned in mix.lock), needed only
-# to point the config.txt resource at our own config/config.txt and to ship
-# the extra overlays/spi3-1cs.dtbo it references. If kiosk_system_rpi4 is
+# to point the config.txt resource at our own config/config.txt, to ship
+# the extra overlays/spi3-1cs.dtbo it references, and to include our own
+# config/fwup-common.conf (larger rootfs partitions). If kiosk_system_rpi4 is
 # upgraded, re-diff this file against the new version's fwup.conf.eex and
-# reapply these two changes.
+# reapply these three changes.
 #
 require-fwup-version="1.0.0"
 
-include("${NERVES_SDK_IMAGES:-.}/fwup_include/fwup-common.conf")
+# Overridden to pull in our project-local fwup-common.conf (larger rootfs
+# partitions) instead of the system's. See config/fwup-common.conf.
+include("${NERVES_APP}/config/fwup-common.conf")
 
 # Special case files
 # * start4.elf   - required in the autoboot partition to boot
